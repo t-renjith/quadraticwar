@@ -2,39 +2,51 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Quadratic War</title>
     <style>
         /* --- Professional Dark Theme CSS --- */
         body {
             background-color: #1A1A2E; 
             color: #E0E5EC;
-            /* Use a serif font stack to match the LaTeX look on the page text too */
             font-family: 'Times New Roman', Times, serif; 
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: center; /* Center vertically on mobile */
             margin: 0;
-            padding: 30px;
+            padding: 10px; /* Reduced padding for mobile */
+            min-height: 100vh;
+            overflow: hidden; /* Prevent body scrolling while playing */
         }
         h1 { 
-            margin-bottom: 20px; 
+            margin: 10px 0; 
             font-weight: normal;
             letter-spacing: 1px;
-            font-style: italic; /* Mathematical flair */
+            font-style: italic;
+            font-size: 24px; /* Slightly smaller for mobile */
         }
         canvas {
             background-color: #2D3748; 
-            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
             border-radius: 4px;
-            cursor: pointer;
+            
+            /* --- RESPONSIVE CSS --- */
+            width: 100%;           /* Fit width of container/screen */
+            max-width: 560px;      /* But don't get bigger than native size */
+            height: auto;          /* Maintain aspect ratio */
+            
+            /* Critical for mobile: stops browser from hijacking swipes */
+            touch-action: none;    
+            -webkit-tap-highlight-color: transparent; /* Remove blue tap box on Android */
         }
         .status {
-            margin-top: 20px;
-            font-size: 22px; /* Slightly larger for math formulas */
+            margin-top: 15px;
+            font-size: 18px; 
             font-weight: normal;
             color: #A0AEC0; 
             height: 30px; 
+            text-align: center;
         }
     </style>
 </head>
@@ -66,7 +78,7 @@
         ANIM_FAIL:     "#E53E3E"  
     };
 
-    // Algebraic Terms (Standard strings for logic)
+    // Algebraic Terms
     const COIN_TERMS = {
         1: ["-4x^2", "-3x^2", "-2x^2", "-x^2", "x^2", "2x^2", "3x^2", "4x^2"], 
         2: ["-4x", "-3x", "-2x", "-x", "x", "2x", "3x", "4x"],
@@ -87,21 +99,8 @@
 
     // --- LATEX FORMATTING HELPER ---
     function toLatexStyle(str) {
-        // 1. Replace hyphen with Mathematical Minus
         let latexStr = str.replace(/-/g, "−");
-        
-        // 2. Replace 'x' with Mathematical Italic x
-        // We use the unicode mathematical italic small x (U+1D465)
-        // But simply using a serif italic font with normal 'x' is safer and looks cleaner 
-        // in standard web fonts. Let's stick to standard 'x' but enforce Italic Serif font.
-        // However, we MUST handle the exponent.
-        
-        // 3. Replace '^2' with Superscript 2
         latexStr = latexStr.replace(/\^2/g, "²");
-        
-        // 4. Handle Coefficients '1x' -> 'x' (Optional aesthetic, but LaTeX usually does this)
-        // Let's keep it explicit as per game rules logic for now.
-        
         return latexStr;
     }
 
@@ -117,13 +116,11 @@
 
     function initBoard() {
         board = {};
-        // Player 1 (Red)
         for (let c = 0; c < BOARD_COLS; c++) {
             board[`0,${c}`] = { p: 1, term: getTermAtPos(1, 1, c) };
             board[`1,${c}`] = { p: 1, term: getTermAtPos(1, 2, c) };
             board[`2,${c}`] = { p: 1, term: getTermAtPos(1, 3, c) };
         }
-        // Player 2 (Blue)
         for (let c = 0; c < BOARD_COLS; c++) {
             board[`6,${c}`] = { p: 2, term: getTermAtPos(2, 3, c) };
             board[`7,${c}`] = { p: 2, term: getTermAtPos(2, 2, c) };
@@ -133,8 +130,6 @@
 
     // --- MATH LOGIC ---
     function parseTerm(termStr) {
-        // Remove unicode formatting if passed in by accident, though we shouldn't
-        // Convert logic string to numbers
         termStr = termStr.replace(/\s/g, '');
         let coeff = 0;
         let degree = 0;
@@ -293,7 +288,7 @@
     function draw() {
         ctx.clearRect(0,0, canvas.width, canvas.height);
 
-        // 1. Draw Board Tiles
+        // 1. Draw Board
         for (let r = 0; r < BOARD_ROWS; r++) {
             for (let c = 0; c < BOARD_COLS; c++) {
                 const x = c * TILE_SIZE;
@@ -313,16 +308,12 @@
             }
         }
 
-        // 2. Draw Animation Highlights
+        // 2. Draw Animations
         if (currentAnimation) {
             const anim = currentAnimation;
             let color;
-            
-            if (anim.phase === 'IDENTIFY') {
-                color = COLORS.ANIM_IDENTIFY;
-            } else { 
-                color = anim.isSuccess ? COLORS.ANIM_SUCCESS : COLORS.ANIM_FAIL;
-            }
+            if (anim.phase === 'IDENTIFY') color = COLORS.ANIM_IDENTIFY;
+            else color = anim.isSuccess ? COLORS.ANIM_SUCCESS : COLORS.ANIM_FAIL;
 
             ctx.globalAlpha = 0.5;
             ctx.fillStyle = color;
@@ -376,26 +367,19 @@
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 0;
 
-            // --- LATEX TEXT RENDERING ---
             ctx.fillStyle = COLORS.WHITE;
-            // Times New Roman is the standard font for LaTeX math
             ctx.font = "italic 22px 'Times New Roman', Times, serif";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            
-            // Convert simple string to visual LaTeX string
-            const latexText = toLatexStyle(piece.term);
-            ctx.fillText(latexText, x, y);
+            ctx.fillText(toLatexStyle(piece.term), x, y);
         }
     }
 
-    // --- GAME LOOP & UPDATES ---
+    // --- GAME LOOP ---
     function update(timestamp) {
         if (currentAnimation) {
             const elapsed = timestamp - currentAnimation.startTime;
-            
             if (currentAnimation.phase === 'IDENTIFY') {
-                // Format the displayed equation in Latex Style for the status bar too
                 const visualPoly = toLatexStyle(currentAnimation.polyStr);
                 statusText.innerText = `Analyzing: ${visualPoly} = 0`;
                 statusText.style.color = COLORS.ANIM_IDENTIFY; 
@@ -433,16 +417,29 @@
 
     function resetStatusText() {
          const pName = currentPlayer === 1 ? "Red" : "Blue";
-         statusText.innerText = `${pName}'s Turn`;
+         statusText.innerText = `Player ${currentPlayer} (${pName})'s Turn`;
          statusText.style.color = currentPlayer === 1 ? COLORS.RED_COIN_LIGHT : COLORS.BLUE_COIN_LIGHT;
     }
 
-    // --- INPUT HANDLING ---
-    canvas.addEventListener('mousedown', (e) => {
+    // --- INPUT HANDLING (MOBILE OPTIMIZED) ---
+    // We use pointerdown to handle both mouse clicks and touch taps
+    canvas.addEventListener('pointerdown', (e) => {
+        // Prevent default browser zooming/scrolling actions
+        e.preventDefault(); 
+
         if (currentAnimation || animationQueue.length > 0) return; 
+
+        // CRITICAL MOBILE MATH:
+        // Adjust click coordinates based on how much the CSS resized the canvas
         const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        
+        // This scale factor is needed if the canvas is shrunk by CSS (width: 100%)
+        const scaleX = canvas.width / rect.width; 
+        const scaleY = canvas.height / rect.height;
+
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
+        
         const c = Math.floor(x / TILE_SIZE);
         const r = Math.floor(y / TILE_SIZE);
         const key = `${r},${c}`;
