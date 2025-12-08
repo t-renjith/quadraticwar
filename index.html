@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quadratic War</title>
+    <style>
+        /* --- Professional Dark Theme CSS --- */
+        body {
+            background-color: #1A1A2E; 
+            color: #E0E5EC;
+            /* Use a serif font stack to match the LaTeX look on the page text too */
+            font-family: 'Times New Roman', Times, serif; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 30px;
+        }
+        h1 { 
+            margin-bottom: 20px; 
+            font-weight: normal;
+            letter-spacing: 1px;
+            font-style: italic; /* Mathematical flair */
+        }
+        canvas {
+            background-color: #2D3748; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .status {
+            margin-top: 20px;
+            font-size: 22px; /* Slightly larger for math formulas */
+            font-weight: normal;
+            color: #A0AEC0; 
+            height: 30px; 
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Quadratic War</h1>
+    <canvas id="gameCanvas" width="560" height="630"></canvas>
+    <div class="status" id="statusText">Initializing...</div>
+
+<script>
+    // --- CONFIGURATION ---
+    const BOARD_ROWS = 9;
+    const BOARD_COLS = 8;
+    const TILE_SIZE = 70;
+    
+    // --- PROFESSIONAL COLOR PALETTE ---
+    const COLORS = {
+        WHITE: "#FFFFFF",
+        BOARD_LIGHT: "#E0E5EC", 
+        BOARD_DARK:  "#4A5568", 
+        RED_COIN_BASE: "#9B2C2C",   
+        RED_COIN_LIGHT: "#C53030",  
+        BLUE_COIN_BASE: "#2B6CB0",  
+        BLUE_COIN_LIGHT: "#4299E1", 
+        HIGHLIGHT_SELECT: "#F6E05E", 
+        HIGHLIGHT_VALID:  "#48BB78", 
+        ANIM_IDENTIFY: "#63B3ED", 
+        ANIM_SUCCESS:  "#38A169", 
+        ANIM_FAIL:     "#E53E3E"  
+    };
+
+    // Algebraic Terms (Standard strings for logic)
+    const COIN_TERMS = {
+        1: ["-4x^2", "-3x^2", "-2x^2", "-x^2", "x^2", "2x^2", "3x^2", "4x^2"], 
+        2: ["-4x", "-3x", "-2x", "-x", "x", "2x", "3x", "4x"],
+        3: ["-4", "-3", "-2", "-1", "1", "2", "3", "4"]
+    };
+
+    // --- STATE ---
+    let board = {}; 
+    let selectedCoin = null; 
+    let currentPlayer = 2; 
+    let validMoves = []; 
+    let animationQueue = [];
+    let currentAnimation = null;
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('statusText');
+
+    // --- LATEX FORMATTING HELPER ---
+    function toLatexStyle(str) {
+        // 1. Replace hyphen with Mathematical Minus
+        let latexStr = str.replace(/-/g, "−");
+        
+        // 2. Replace 'x' with Mathematical Italic x
+        // We use the unicode mathematical italic small x (U+1D465)
+        // But simply using a serif italic font with normal 'x' is safer and looks cleaner 
+        // in standard web fonts. Let's stick to standard 'x' but enforce Italic Serif font.
+        // However, we MUST handle the exponent.
+        
+        // 3. Replace '^2' with Superscript 2
+        latexStr = latexStr.replace(/\^2/g, "²");
+        
+        // 4. Handle Coefficients '1x' -> 'x' (Optional aesthetic, but LaTeX usually does this)
+        // Let's keep it explicit as per game rules logic for now.
+        
+        return latexStr;
+    }
+
+    // --- INITIALIZATION ---
+    function getTermAtPos(player, termType, col) {
+        const terms = COIN_TERMS[termType];
+        if (player === 1) {
+            return terms[terms.length - 1 - col];
+        } else {
+            return terms[col];
+        }
+    }
+
+    function initBoard() {
+        board = {};
+        // Player 1 (Red)
+        for (let c = 0; c < BOARD_COLS; c++) {
+            board[`0,${c}`] = { p: 1, term: getTermAtPos(1, 1, c) };
+            board[`1,${c}`] = { p: 1, term: getTermAtPos(1, 2, c) };
+            board[`2,${c}`] = { p: 1, term: getTermAtPos(1, 3, c) };
+        }
+        // Player 2 (Blue)
+        for (let c = 0; c < BOARD_COLS; c++) {
+            board[`6,${c}`] = { p: 2, term: getTermAtPos(2, 3, c) };
+            board[`7,${c}`] = { p: 2, term: getTermAtPos(2, 2, c) };
+            board[`8,${c}`] = { p: 2, term: getTermAtPos(2, 1, c) };
+        }
+    }
+
+    // --- MATH LOGIC ---
+    function parseTerm(termStr) {
+        // Remove unicode formatting if passed in by accident, though we shouldn't
+        // Convert logic string to numbers
+        termStr = termStr.replace(/\s/g, '');
+        let coeff = 0;
+        let degree = 0;
+
+        if (termStr.includes("x^2")) {
+            degree = 2;
+            let cStr = termStr.replace("x^2", "");
+            if (cStr === "" || cStr === "+") coeff = 1;
+            else if (cStr === "-") coeff = -1;
+            else coeff = parseInt(cStr);
+        } else if (termStr.includes("x")) {
+            degree = 1;
+            let cStr = termStr.replace("x", "");
+            if (cStr === "" || cStr === "+") coeff = 1;
+            else if (cStr === "-") coeff = -1;
+            else coeff = parseInt(cStr);
+        } else {
+            degree = 0;
+            coeff = parseInt(termStr);
+        }
+        return { coeff, degree };
+    }
+
+    // --- MOVEMENT LOGIC ---
+    function isValidMove(startR, startC, endR, endC, player) {
+        if (startR === endR && startC === endC) return false;
+        const startKey = `${startR},${startC}`;
+        const endKey = `${endR},${endC}`;
+        if (!board[startKey]) return false;
+        if (board[endKey]) return false; 
+
+        const term = board[startKey].term;
+        const isQuad = term.includes("x^2");
+        const isLin = term.includes("x") && !isQuad;
+        const isConst = !isQuad && !isLin;
+
+        const maxRange = isQuad ? 3 : (isLin ? 2 : 1);
+        const rowDiff = endR - startR;
+        const colDiff = endC - startC;
+        const absRow = Math.abs(rowDiff);
+        const absCol = Math.abs(colDiff);
+        const maxStep = Math.max(absRow, absCol);
+
+        if (maxStep > maxRange) return false;
+
+        if (isConst) {
+            if (absCol !== 0) return false;
+            if (player === 1 && rowDiff !== 1) return false;
+            if (player === 2 && rowDiff !== -1) return false;
+        } else if (isLin) {
+            if (absRow > 0 && absCol > 0) return false;
+        } else if (isQuad) {
+            const isCardinal = (absRow === 0 || absCol === 0);
+            const isDiagonal = (absRow === absCol);
+            if (!isCardinal && !isDiagonal) return false;
+        }
+
+        const stepR = rowDiff === 0 ? 0 : (rowDiff > 0 ? 1 : -1);
+        const stepC = colDiff === 0 ? 0 : (colDiff > 0 ? 1 : -1);
+        let curR = startR + stepR;
+        let curC = startC + stepC;
+        while (curR !== endR || curC !== endC) {
+            if (board[`${curR},${curC}`]) return false; 
+            curR += stepR;
+            curC += stepC;
+        }
+        return true;
+    }
+
+    function getValidMoves(r, c, player) {
+        let moves = [];
+        for (let i = 0; i < BOARD_ROWS; i++) {
+            for (let j = 0; j < BOARD_COLS; j++) {
+                if (isValidMove(r, c, i, j, player)) {
+                    moves.push({ r: i, c: j });
+                }
+            }
+        }
+        return moves;
+    }
+
+    // --- EQUATION DETECTION ---
+    function getContiguousChain(startR, startC, deltaR, deltaC) {
+        let chain = [];
+        let currR = startR + deltaR;
+        let currC = startC + deltaC;
+        while (currR >= 0 && currR < BOARD_ROWS && currC >= 0 && currC < BOARD_COLS) {
+            if (board[`${currR},${currC}`]) {
+                chain.push({ r: currR, c: currC });
+                currR += deltaR;
+                currC += deltaC;
+            } else { break; }
+        }
+        return chain;
+    }
+
+    function checkForEquations(r, c, activePlayer) {
+        const detected = [];
+        const opponent = activePlayer === 1 ? 2 : 1;
+        const axes = [
+            { neg: [0, -1], pos: [0, 1] }, { neg: [-1, 0], pos: [1, 0] },
+            { neg: [-1, -1], pos: [1, 1] }, { neg: [-1, 1], pos: [1, -1] }
+        ];
+
+        axes.forEach(axis => {
+            const negChain = getContiguousChain(r, c, axis.neg[0], axis.neg[1]);
+            const posChain = getContiguousChain(r, c, axis.pos[0], axis.pos[1]);
+            const fullChain = [...negChain.reverse(), {r, c}, ...posChain];
+
+            if (fullChain.length < 2) return;
+
+            const players = new Set();
+            const terms = [];
+            fullChain.forEach(pos => {
+                const piece = board[`${pos.r},${pos.c}`];
+                players.add(piece.p);
+                terms.push(piece.term);
+            });
+
+            if (players.size < 2) return;
+
+            let a = 0, b = 0, constant = 0;
+            terms.forEach(t => {
+                const p = parseTerm(t);
+                if (p.degree === 2) a += p.coeff;
+                else if (p.degree === 1) b += p.coeff;
+                else constant += p.coeff;
+            });
+
+            if (a === 0) return;
+
+            const discriminant = (b * b) - (4 * a * constant);
+            const hasRealSolutions = discriminant >= 0;
+            const targetColor = hasRealSolutions ? opponent : activePlayer;
+            
+            const removeList = [];
+            fullChain.forEach(pos => {
+                if (board[`${pos.r},${pos.c}`].p === targetColor) {
+                    removeList.push(pos);
+                }
+            });
+
+            detected.push({
+                coords: fullChain,
+                remove: removeList,
+                isSuccess: hasRealSolutions,
+                polyStr: `${a}x^2 + ${b}x + ${constant}`,
+                phase: 'IDENTIFY',
+                startTime: performance.now()
+            });
+        });
+        return detected;
+    }
+
+    // --- RENDER LOOP ---
+    function draw() {
+        ctx.clearRect(0,0, canvas.width, canvas.height);
+
+        // 1. Draw Board Tiles
+        for (let r = 0; r < BOARD_ROWS; r++) {
+            for (let c = 0; c < BOARD_COLS; c++) {
+                const x = c * TILE_SIZE;
+                const y = r * TILE_SIZE;
+                
+                ctx.fillStyle = (r + c) % 2 === 0 ? COLORS.BOARD_LIGHT : COLORS.BOARD_DARK;
+                ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+
+                if (!currentAnimation) {
+                    const isValid = validMoves.some(m => m.r === r && m.c === c);
+                    if (isValid) {
+                        ctx.strokeStyle = COLORS.HIGHLIGHT_VALID;
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                    }
+                }
+            }
+        }
+
+        // 2. Draw Animation Highlights
+        if (currentAnimation) {
+            const anim = currentAnimation;
+            let color;
+            
+            if (anim.phase === 'IDENTIFY') {
+                color = COLORS.ANIM_IDENTIFY;
+            } else { 
+                color = anim.isSuccess ? COLORS.ANIM_SUCCESS : COLORS.ANIM_FAIL;
+            }
+
+            ctx.globalAlpha = 0.5;
+            ctx.fillStyle = color;
+            anim.coords.forEach(pos => {
+                ctx.fillRect(pos.c * TILE_SIZE, pos.r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            });
+            ctx.globalAlpha = 1.0; 
+            
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 4;
+            anim.coords.forEach(pos => {
+                 ctx.strokeRect(pos.c * TILE_SIZE + 2, pos.r * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+            });
+        }
+
+        // 3. Draw Coins
+        for (let key in board) {
+            const piece = board[key];
+            const [r, c] = key.split(',').map(Number);
+            const x = c * TILE_SIZE + TILE_SIZE / 2;
+            const y = r * TILE_SIZE + TILE_SIZE / 2;
+            const radius = TILE_SIZE / 2 - 6; 
+
+            if (selectedCoin && selectedCoin.r === r && selectedCoin.c === c) {
+                ctx.beginPath();
+                ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
+                ctx.fillStyle = COLORS.HIGHLIGHT_SELECT;
+                ctx.fill();
+            }
+
+            const gradient = ctx.createRadialGradient(x, y, radius * 0.3, x, y, radius);
+            if (piece.p === 1) {
+                gradient.addColorStop(0, COLORS.RED_COIN_LIGHT);
+                gradient.addColorStop(1, COLORS.RED_COIN_BASE);
+            } else {
+                gradient.addColorStop(0, COLORS.BLUE_COIN_LIGHT);
+                gradient.addColorStop(1, COLORS.BLUE_COIN_BASE);
+            }
+
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = gradient;
+            ctx.shadowColor = 'rgba(0,0,0,0.4)';
+            ctx.shadowBlur = 4;
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 2;
+            ctx.fill();
+            
+            ctx.shadowColor = 'transparent'; 
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+
+            // --- LATEX TEXT RENDERING ---
+            ctx.fillStyle = COLORS.WHITE;
+            // Times New Roman is the standard font for LaTeX math
+            ctx.font = "italic 22px 'Times New Roman', Times, serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            
+            // Convert simple string to visual LaTeX string
+            const latexText = toLatexStyle(piece.term);
+            ctx.fillText(latexText, x, y);
+        }
+    }
+
+    // --- GAME LOOP & UPDATES ---
+    function update(timestamp) {
+        if (currentAnimation) {
+            const elapsed = timestamp - currentAnimation.startTime;
+            
+            if (currentAnimation.phase === 'IDENTIFY') {
+                // Format the displayed equation in Latex Style for the status bar too
+                const visualPoly = toLatexStyle(currentAnimation.polyStr);
+                statusText.innerText = `Analyzing: ${visualPoly} = 0`;
+                statusText.style.color = COLORS.ANIM_IDENTIFY; 
+                if (elapsed > 1500) {
+                    currentAnimation.phase = 'RESOLVE';
+                    currentAnimation.startTime = timestamp;
+                }
+            } else if (currentAnimation.phase === 'RESOLVE') {
+                const isSuccess = currentAnimation.isSuccess;
+                const resText = isSuccess ? "REAL Solutions (Δ ≥ 0)." : "COMPLEX Solutions (Δ < 0).";
+                const actionText = isSuccess ? "Opponent Removed." : "Backfire!";
+                statusText.innerText = `${resText} ${actionText}`;
+                statusText.style.color = isSuccess ? COLORS.ANIM_SUCCESS : COLORS.ANIM_FAIL;
+
+                if (elapsed > 1500) {
+                    currentAnimation.remove.forEach(pos => { delete board[`${pos.r},${pos.c}`]; });
+                    currentAnimation = null;
+                    if (animationQueue.length === 0) {
+                        currentPlayer = currentPlayer === 1 ? 2 : 1;
+                        resetStatusText();
+                    }
+                }
+            }
+        } else {
+            if (animationQueue.length > 0) {
+                currentAnimation = animationQueue.shift();
+                currentAnimation.startTime = timestamp;
+            } else {
+                 resetStatusText();
+            }
+        }
+        draw();
+        requestAnimationFrame(update);
+    }
+
+    function resetStatusText() {
+         const pName = currentPlayer === 1 ? "Red" : "Blue";
+         statusText.innerText = `${pName}'s Turn`;
+         statusText.style.color = currentPlayer === 1 ? COLORS.RED_COIN_LIGHT : COLORS.BLUE_COIN_LIGHT;
+    }
+
+    // --- INPUT HANDLING ---
+    canvas.addEventListener('mousedown', (e) => {
+        if (currentAnimation || animationQueue.length > 0) return; 
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const c = Math.floor(x / TILE_SIZE);
+        const r = Math.floor(y / TILE_SIZE);
+        const key = `${r},${c}`;
+
+        if (selectedCoin) {
+            const startR = selectedCoin.r; const startC = selectedCoin.c;
+            if (startR === r && startC === c) {
+                selectedCoin = null; validMoves = []; return;
+            }
+            const isMoveValid = validMoves.some(m => m.r === r && m.c === c);
+            if (isMoveValid) {
+                board[`${r},${c}`] = board[`${startR},${startC}`];
+                delete board[`${startR},${startC}`];
+                selectedCoin = null; validMoves = [];
+                const equations = checkForEquations(r, c, currentPlayer);
+                if (equations.length > 0) {
+                    animationQueue.push(...equations);
+                } else {
+                    currentPlayer = currentPlayer === 1 ? 2 : 1;
+                }
+            } else {
+                if (board[key] && board[key].p === currentPlayer) {
+                    selectedCoin = {r, c}; validMoves = getValidMoves(r, c, currentPlayer);
+                } else { selectedCoin = null; validMoves = []; }
+            }
+        } else {
+            if (board[key] && board[key].p === currentPlayer) {
+                selectedCoin = {r, c}; validMoves = getValidMoves(r, c, currentPlayer);
+            }
+        }
+    });
+
+    // Start Game
+    initBoard();
+    requestAnimationFrame(update);
+
+</script>
+</body>
+</html>
