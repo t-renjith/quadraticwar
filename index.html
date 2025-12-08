@@ -13,32 +13,28 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center; /* Center vertically on mobile */
+            justify-content: center;
             margin: 0;
-            padding: 10px; /* Reduced padding for mobile */
+            padding: 10px;
             min-height: 100vh;
-            overflow: hidden; /* Prevent body scrolling while playing */
+            overflow: hidden;
         }
         h1 { 
             margin: 10px 0; 
             font-weight: normal;
             letter-spacing: 1px;
             font-style: italic;
-            font-size: 24px; /* Slightly smaller for mobile */
+            font-size: 24px;
         }
         canvas {
             background-color: #2D3748; 
             box-shadow: 0 5px 15px rgba(0,0,0,0.5);
             border-radius: 4px;
-            
-            /* --- RESPONSIVE CSS --- */
-            width: 100%;           /* Fit width of container/screen */
-            max-width: 560px;      /* But don't get bigger than native size */
-            height: auto;          /* Maintain aspect ratio */
-            
-            /* Critical for mobile: stops browser from hijacking swipes */
+            width: 100%;           
+            max-width: 560px;      
+            height: auto;          
             touch-action: none;    
-            -webkit-tap-highlight-color: transparent; /* Remove blue tap box on Android */
+            -webkit-tap-highlight-color: transparent;
         }
         .status {
             margin-top: 15px;
@@ -54,7 +50,7 @@
 
     <h1>Quadratic War</h1>
     <canvas id="gameCanvas" width="560" height="630"></canvas>
-    <div class="status" id="statusText">Initializing...</div>
+    <div class="status" id="statusText">Select a Game Mode</div>
 
 <script>
     // --- CONFIGURATION ---
@@ -62,7 +58,7 @@
     const BOARD_COLS = 8;
     const TILE_SIZE = 70;
     
-    // --- PROFESSIONAL COLOR PALETTE ---
+    // --- COLORS ---
     const COLORS = {
         WHITE: "#FFFFFF",
         BOARD_LIGHT: "#E0E5EC", 
@@ -75,7 +71,9 @@
         HIGHLIGHT_VALID:  "#48BB78", 
         ANIM_IDENTIFY: "#63B3ED", 
         ANIM_SUCCESS:  "#38A169", 
-        ANIM_FAIL:     "#E53E3E"  
+        ANIM_FAIL:     "#E53E3E",
+        MENU_BTN: "#2B6CB0",
+        MENU_BTN_HOVER: "#4299E1"
     };
 
     // Algebraic Terms
@@ -86,18 +84,26 @@
     };
 
     // --- STATE ---
+    let gameState = "MENU"; // "MENU" or "PLAYING"
+    let gameMode = null;    // "PVP" or "PVC" (Player vs Computer)
+    
     let board = {}; 
     let selectedCoin = null; 
-    let currentPlayer = 2; 
+    let currentPlayer = 2; // Blue Starts
     let validMoves = []; 
     let animationQueue = [];
     let currentAnimation = null;
+    let isAIThinking = false;
 
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     const statusText = document.getElementById('statusText');
 
-    // --- LATEX FORMATTING HELPER ---
+    // --- BUTTONS FOR MENU ---
+    const btnPVP = { x: 130, y: 250, w: 300, h: 60, text: "2 Players" };
+    const btnPVC = { x: 130, y: 340, w: 300, h: 60, text: "Vs Computer" };
+
+    // --- LATEX FORMATTING ---
     function toLatexStyle(str) {
         let latexStr = str.replace(/-/g, "−");
         latexStr = latexStr.replace(/\^2/g, "²");
@@ -107,11 +113,8 @@
     // --- INITIALIZATION ---
     function getTermAtPos(player, termType, col) {
         const terms = COIN_TERMS[termType];
-        if (player === 1) {
-            return terms[terms.length - 1 - col];
-        } else {
-            return terms[col];
-        }
+        if (player === 1) return terms[terms.length - 1 - col];
+        else return terms[col];
     }
 
     function initBoard() {
@@ -128,12 +131,22 @@
         }
     }
 
-    // --- MATH LOGIC ---
+    function startGame(mode) {
+        gameMode = mode;
+        gameState = "PLAYING";
+        currentPlayer = 2; // Blue Always Starts
+        selectedCoin = null;
+        validMoves = [];
+        animationQueue = [];
+        currentAnimation = null;
+        initBoard();
+        resetStatusText();
+    }
+
+    // --- MATH & MOVEMENT LOGIC (Standard) ---
     function parseTerm(termStr) {
         termStr = termStr.replace(/\s/g, '');
-        let coeff = 0;
-        let degree = 0;
-
+        let coeff = 0, degree = 0;
         if (termStr.includes("x^2")) {
             degree = 2;
             let cStr = termStr.replace("x^2", "");
@@ -147,13 +160,11 @@
             else if (cStr === "-") coeff = -1;
             else coeff = parseInt(cStr);
         } else {
-            degree = 0;
-            coeff = parseInt(termStr);
+            degree = 0; coeff = parseInt(termStr);
         }
         return { coeff, degree };
     }
 
-    // --- MOVEMENT LOGIC ---
     function isValidMove(startR, startC, endR, endC, player) {
         if (startR === endR && startC === endC) return false;
         const startKey = `${startR},${startC}`;
@@ -240,7 +251,6 @@
             const fullChain = [...negChain.reverse(), {r, c}, ...posChain];
 
             if (fullChain.length < 2) return;
-
             const players = new Set();
             const terms = [];
             fullChain.forEach(pos => {
@@ -260,16 +270,12 @@
             });
 
             if (a === 0) return;
-
             const discriminant = (b * b) - (4 * a * constant);
             const hasRealSolutions = discriminant >= 0;
             const targetColor = hasRealSolutions ? opponent : activePlayer;
-            
             const removeList = [];
             fullChain.forEach(pos => {
-                if (board[`${pos.r},${pos.c}`].p === targetColor) {
-                    removeList.push(pos);
-                }
+                if (board[`${pos.r},${pos.c}`].p === targetColor) removeList.push(pos);
             });
 
             detected.push({
@@ -284,20 +290,133 @@
         return detected;
     }
 
-    // --- RENDER LOOP ---
-    function draw() {
+    // --- ARTIFICIAL INTELLIGENCE ---
+    function triggerComputerTurn() {
+        if (isAIThinking || gameState !== "PLAYING") return;
+        isAIThinking = true;
+        statusText.innerText = "Computer is thinking...";
+        statusText.style.color = COLORS.RED_COIN_LIGHT;
+
+        setTimeout(() => {
+            makeBestMove();
+            isAIThinking = false;
+        }, 800);
+    }
+
+    function makeBestMove() {
+        let allMoves = [];
+        for (let key in board) {
+            if (board[key].p === 1) { // Computer is Red (1)
+                const [r, c] = key.split(',').map(Number);
+                const moves = getValidMoves(r, c, 1);
+                moves.forEach(m => {
+                    allMoves.push({ start: {r, c}, end: {r: m.r, c: m.c} });
+                });
+            }
+        }
+
+        if (allMoves.length === 0) {
+            currentPlayer = 2; resetStatusText(); return;
+        }
+
+        let bestScore = -Infinity;
+        let candidates = [];
+
+        allMoves.forEach(move => {
+            let score = 0;
+            const startKey = `${move.start.r},${move.start.c}`;
+            const endKey = `${move.end.r},${move.end.c}`;
+            const movingPiece = board[startKey];
+            delete board[startKey];
+            board[endKey] = movingPiece;
+
+            const equations = checkForEquations(move.end.r, move.end.c, 1);
+            
+            delete board[endKey];
+            board[startKey] = movingPiece;
+
+            if (equations.length > 0) {
+                equations.forEach(eq => {
+                    if (eq.isSuccess) score += 100 + (eq.remove.length * 10);
+                    else score -= 1000; 
+                });
+            } else {
+                // Heuristic: Advance forward, prefer center
+                score += (move.end.r - move.start.r) * 2; 
+                if(move.end.c > 2 && move.end.c < 5) score += 1;
+                score += Math.random(); 
+            }
+
+            if (score > bestScore) {
+                bestScore = score; candidates = [move];
+            } else if (score === bestScore) {
+                candidates.push(move);
+            }
+        });
+
+        const selectedMove = candidates[Math.floor(Math.random() * candidates.length)];
+        const startKey = `${selectedMove.start.r},${selectedMove.start.c}`;
+        const endKey = `${selectedMove.end.r},${selectedMove.end.c}`;
+        
+        board[endKey] = board[startKey];
+        delete board[startKey];
+
+        const equations = checkForEquations(selectedMove.end.r, selectedMove.end.c, 1);
+        if (equations.length > 0) {
+            animationQueue.push(...equations);
+        } else {
+            currentPlayer = 2; resetStatusText();
+        }
+    }
+
+    // --- DRAWING ---
+    function drawMenu() {
+        ctx.fillStyle = "#1A1A2E"; 
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw Buttons
+        ctx.fillStyle = COLORS.MENU_BTN;
+        ctx.fillRect(btnPVP.x, btnPVP.y, btnPVP.w, btnPVP.h);
+        ctx.fillRect(btnPVC.x, btnPVC.y, btnPVC.w, btnPVC.h);
+
+        // Draw Border
+        ctx.strokeStyle = COLORS.WHITE;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(btnPVP.x, btnPVP.y, btnPVP.w, btnPVP.h);
+        ctx.strokeRect(btnPVC.x, btnPVC.y, btnPVC.w, btnPVC.h);
+
+        // Draw Text
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = "24px 'Times New Roman', serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(btnPVP.text, btnPVP.x + btnPVP.w/2, btnPVP.y + btnPVP.h/2);
+        ctx.fillText(btnPVC.text, btnPVC.x + btnPVC.w/2, btnPVC.y + btnPVC.h/2);
+
+        // Title Decoration
+        ctx.font = "italic 36px 'Times New Roman', serif";
+        ctx.fillStyle = COLORS.BLUE_COIN_LIGHT;
+        ctx.fillText("Main Menu", canvas.width/2, 150);
+    }
+
+    function drawBoard() {
         ctx.clearRect(0,0, canvas.width, canvas.height);
 
-        // 1. Draw Board
+        // 1. Draw Tiles
         for (let r = 0; r < BOARD_ROWS; r++) {
             for (let c = 0; c < BOARD_COLS; c++) {
                 const x = c * TILE_SIZE;
                 const y = r * TILE_SIZE;
-                
                 ctx.fillStyle = (r + c) % 2 === 0 ? COLORS.BOARD_LIGHT : COLORS.BOARD_DARK;
                 ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
 
-                if (!currentAnimation) {
+                if (!currentAnimation && currentPlayer !== 1 && gameMode === 'PVC') {
+                   // In PVC, don't show computer moves
+                } 
+                // Show valid moves if it's human's turn (Always Human in PVP, Only Player 2 in PVC)
+                const isHumanTurn = (gameMode === 'PVP') || (gameMode === 'PVC' && currentPlayer === 2);
+
+                if (!currentAnimation && isHumanTurn) {
                     const isValid = validMoves.some(m => m.r === r && m.c === c);
                     if (isValid) {
                         ctx.strokeStyle = COLORS.HIGHLIGHT_VALID;
@@ -308,28 +427,17 @@
             }
         }
 
-        // 2. Draw Animations
+        // 2. Animations
         if (currentAnimation) {
             const anim = currentAnimation;
-            let color;
-            if (anim.phase === 'IDENTIFY') color = COLORS.ANIM_IDENTIFY;
-            else color = anim.isSuccess ? COLORS.ANIM_SUCCESS : COLORS.ANIM_FAIL;
-
-            ctx.globalAlpha = 0.5;
-            ctx.fillStyle = color;
-            anim.coords.forEach(pos => {
-                ctx.fillRect(pos.c * TILE_SIZE, pos.r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-            });
-            ctx.globalAlpha = 1.0; 
-            
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 4;
-            anim.coords.forEach(pos => {
-                 ctx.strokeRect(pos.c * TILE_SIZE + 2, pos.r * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4);
-            });
+            let color = (anim.phase === 'IDENTIFY') ? COLORS.ANIM_IDENTIFY : (anim.isSuccess ? COLORS.ANIM_SUCCESS : COLORS.ANIM_FAIL);
+            ctx.globalAlpha = 0.5; ctx.fillStyle = color;
+            anim.coords.forEach(pos => ctx.fillRect(pos.c * TILE_SIZE, pos.r * TILE_SIZE, TILE_SIZE, TILE_SIZE));
+            ctx.globalAlpha = 1.0; ctx.strokeStyle = color; ctx.lineWidth = 4;
+            anim.coords.forEach(pos => ctx.strokeRect(pos.c * TILE_SIZE+2, pos.r * TILE_SIZE+2, TILE_SIZE-4, TILE_SIZE-4));
         }
 
-        // 3. Draw Coins
+        // 3. Coins
         for (let key in board) {
             const piece = board[key];
             const [r, c] = key.split(',').map(Number);
@@ -361,11 +469,7 @@
             ctx.shadowOffsetX = 2;
             ctx.shadowOffsetY = 2;
             ctx.fill();
-            
             ctx.shadowColor = 'transparent'; 
-            ctx.shadowBlur = 0;
-            ctx.shadowOffsetX = 0;
-            ctx.shadowOffsetY = 0;
 
             ctx.fillStyle = COLORS.WHITE;
             ctx.font = "italic 22px 'Times New Roman', Times, serif";
@@ -375,71 +479,93 @@
         }
     }
 
-    // --- GAME LOOP ---
+    // --- MAIN LOOP ---
     function update(timestamp) {
-        if (currentAnimation) {
-            const elapsed = timestamp - currentAnimation.startTime;
-            if (currentAnimation.phase === 'IDENTIFY') {
-                const visualPoly = toLatexStyle(currentAnimation.polyStr);
-                statusText.innerText = `Analyzing: ${visualPoly} = 0`;
-                statusText.style.color = COLORS.ANIM_IDENTIFY; 
-                if (elapsed > 1500) {
-                    currentAnimation.phase = 'RESOLVE';
-                    currentAnimation.startTime = timestamp;
+        if (gameState === "MENU") {
+            drawMenu();
+        } else {
+            // GAMEPLAY STATE
+            if (currentAnimation) {
+                const elapsed = timestamp - currentAnimation.startTime;
+                if (currentAnimation.phase === 'IDENTIFY') {
+                    const visualPoly = toLatexStyle(currentAnimation.polyStr);
+                    statusText.innerText = `Analyzing: ${visualPoly} = 0`;
+                    statusText.style.color = COLORS.ANIM_IDENTIFY; 
+                    if (elapsed > 1500) {
+                        currentAnimation.phase = 'RESOLVE';
+                        currentAnimation.startTime = timestamp;
+                    }
+                } else if (currentAnimation.phase === 'RESOLVE') {
+                    const isSuccess = currentAnimation.isSuccess;
+                    statusText.innerText = isSuccess ? "REAL Solutions (Δ ≥ 0). Opponent Removed." : "COMPLEX Solutions (Δ < 0). Backfire!";
+                    statusText.style.color = isSuccess ? COLORS.ANIM_SUCCESS : COLORS.ANIM_FAIL;
+                    if (elapsed > 1500) {
+                        currentAnimation.remove.forEach(pos => { delete board[`${pos.r},${pos.c}`]; });
+                        currentAnimation = null;
+                        if (animationQueue.length === 0) {
+                            currentPlayer = currentPlayer === 1 ? 2 : 1;
+                            resetStatusText();
+                        }
+                    }
                 }
-            } else if (currentAnimation.phase === 'RESOLVE') {
-                const isSuccess = currentAnimation.isSuccess;
-                const resText = isSuccess ? "REAL Solutions (Δ ≥ 0)." : "COMPLEX Solutions (Δ < 0).";
-                const actionText = isSuccess ? "Opponent Removed." : "Backfire!";
-                statusText.innerText = `${resText} ${actionText}`;
-                statusText.style.color = isSuccess ? COLORS.ANIM_SUCCESS : COLORS.ANIM_FAIL;
-
-                if (elapsed > 1500) {
-                    currentAnimation.remove.forEach(pos => { delete board[`${pos.r},${pos.c}`]; });
-                    currentAnimation = null;
-                    if (animationQueue.length === 0) {
-                        currentPlayer = currentPlayer === 1 ? 2 : 1;
-                        resetStatusText();
+            } else {
+                if (animationQueue.length > 0) {
+                    currentAnimation = animationQueue.shift();
+                    currentAnimation.startTime = timestamp;
+                } else {
+                    // Turn Logic
+                    if (gameMode === "PVC" && currentPlayer === 1 && !isAIThinking) {
+                        triggerComputerTurn();
                     }
                 }
             }
-        } else {
-            if (animationQueue.length > 0) {
-                currentAnimation = animationQueue.shift();
-                currentAnimation.startTime = timestamp;
-            } else {
-                 resetStatusText();
-            }
+            drawBoard();
         }
-        draw();
         requestAnimationFrame(update);
     }
 
     function resetStatusText() {
-         const pName = currentPlayer === 1 ? "Red" : "Blue";
-         statusText.innerText = `${pName}'s Turn`;
-         statusText.style.color = currentPlayer === 1 ? COLORS.RED_COIN_LIGHT : COLORS.BLUE_COIN_LIGHT;
+        if (gameMode === "PVC") {
+             if (currentPlayer === 1) {
+                 statusText.innerText = "Computer (Red)'s Turn";
+                 statusText.style.color = COLORS.RED_COIN_LIGHT;
+             } else {
+                 statusText.innerText = "Your Turn (Blue)";
+                 statusText.style.color = COLORS.BLUE_COIN_LIGHT;
+             }
+        } else {
+             // PVP
+             const pName = currentPlayer === 1 ? "Red" : "Blue";
+             statusText.innerText = `Player ${currentPlayer} (${pName})'s Turn`;
+             statusText.style.color = currentPlayer === 1 ? COLORS.RED_COIN_LIGHT : COLORS.BLUE_COIN_LIGHT;
+        }
     }
 
-    // --- INPUT HANDLING (MOBILE OPTIMIZED) ---
-    // We use pointerdown to handle both mouse clicks and touch taps
+    // --- INPUT ---
     canvas.addEventListener('pointerdown', (e) => {
-        // Prevent default browser zooming/scrolling actions
-        e.preventDefault(); 
-
-        if (currentAnimation || animationQueue.length > 0) return; 
-
-        // CRITICAL MOBILE MATH:
-        // Adjust click coordinates based on how much the CSS resized the canvas
+        e.preventDefault();
         const rect = canvas.getBoundingClientRect();
-        
-        // This scale factor is needed if the canvas is shrunk by CSS (width: 100%)
         const scaleX = canvas.width / rect.width; 
         const scaleY = canvas.height / rect.height;
-
         const x = (e.clientX - rect.left) * scaleX;
         const y = (e.clientY - rect.top) * scaleY;
+
+        // MENU CLICKS
+        if (gameState === "MENU") {
+            if (x >= btnPVP.x && x <= btnPVP.x + btnPVP.w && y >= btnPVP.y && y <= btnPVP.y + btnPVP.h) {
+                startGame("PVP");
+            } else if (x >= btnPVC.x && x <= btnPVC.x + btnPVC.w && y >= btnPVC.y && y <= btnPVC.y + btnPVC.h) {
+                startGame("PVC");
+            }
+            return;
+        }
+
+        // GAMEPLAY CLICKS
+        if (currentAnimation || animationQueue.length > 0 || isAIThinking) return; 
         
+        // Prevent Human from clicking during Computer's turn in PVC mode
+        if (gameMode === "PVC" && currentPlayer === 1) return;
+
         const c = Math.floor(x / TILE_SIZE);
         const r = Math.floor(y / TILE_SIZE);
         const key = `${r},${c}`;
@@ -459,6 +585,7 @@
                     animationQueue.push(...equations);
                 } else {
                     currentPlayer = currentPlayer === 1 ? 2 : 1;
+                    resetStatusText();
                 }
             } else {
                 if (board[key] && board[key].p === currentPlayer) {
@@ -472,8 +599,6 @@
         }
     });
 
-    // Start Game
-    initBoard();
     requestAnimationFrame(update);
 
 </script>
