@@ -417,7 +417,7 @@
 
     function resetStatusText() {
          const pName = currentPlayer === 1 ? "Red" : "Blue";
-         statusText.innerText = `Player ${currentPlayer} (${pName})'s Turn`;
+         statusText.innerText = `${pName}'s Turn`;
          statusText.style.color = currentPlayer === 1 ? COLORS.RED_COIN_LIGHT : COLORS.BLUE_COIN_LIGHT;
     }
 
