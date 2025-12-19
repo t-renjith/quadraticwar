@@ -678,6 +678,8 @@
 
 
         // --- PEERJS IMPLEMENTATION ---
+        let connectionTimeout = null;
+
         function logStatus(msg, isError = false) {
             console.log(msg);
             const el = document.getElementById('statusTitle');
@@ -721,6 +723,7 @@
                 logStatus(msg, true);
                 alert(msg);
 
+                if (connectionTimeout) clearTimeout(connectionTimeout);
                 setTimeout(() => {
                     closeOnlineMenu();
                 }, 3000);
@@ -753,7 +756,6 @@
             initPeer((id) => {
                 logStatus("Connecting to Host...");
 
-                // Removed { reliable: true } which can cause issues
                 conn = peer.connect(hostId);
 
                 conn.on('open', () => {
@@ -762,15 +764,21 @@
                 });
 
                 // Safety timeout if connection hangs
-                setTimeout(() => {
-                    if (!onlineGameActive && conn && !conn.open) {
-                        logStatus("Connection timed out. Retrying...", true);
+                if (connectionTimeout) clearTimeout(connectionTimeout);
+                connectionTimeout = setTimeout(() => {
+                    // Only warn if we are still trying to join (hostIdDisplay is hidden)
+                    // and connection is not open
+                    if (!onlineGameActive && conn && !conn.open && document.getElementById('hostIdDisplay').style.display === 'none') {
+                        logStatus("Connection timed out. Please check ID and try again.", true);
+                        alert("Connection timed out. Please check the Host ID.");
+                        closeOnlineMenu();
                     }
-                }, 5000);
+                }, 8000); // 8 seconds
             });
         }
 
         function setupConnection() {
+            if (connectionTimeout) clearTimeout(connectionTimeout);
             if (onlineGameActive) return;
 
             conn.on('data', (data) => {
@@ -779,14 +787,11 @@
             });
 
             conn.on('open', () => {
-                // Double check open state
                 if (myPlayerId === 1) { // Host
-                    // Host sends the START command once connection is fully open
                     conn.send({ type: 'START', player: 2 });
                 }
             });
 
-            // If I am the guest (Initiator of connection), I wait for 'START' data
             if (conn.open && myPlayerId === 1) {
                 conn.send({ type: 'START', player: 2 });
             }
@@ -849,6 +854,7 @@
         }
 
         function closeOnlineMenu() {
+            if (connectionTimeout) clearTimeout(connectionTimeout);
             document.getElementById('onlineOverlay').style.display = 'none';
             // Reset PeerJS connection if any
             if (peer) {
