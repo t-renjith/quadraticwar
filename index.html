@@ -692,10 +692,19 @@
             document.getElementById('lobbyStatus').style.display = 'block';
             logStatus("Initializing Peer...");
 
-            // Create Peer with default config (Google STUN servers included)
-            peer = new Peer({
-                debug: 2
-            });
+            // Explicit STUN server config for better connectivity
+            const peerConfig = {
+                debug: 2,
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun2.l.google.com:19302' }
+                    ]
+                }
+            };
+
+            peer = new Peer(null, peerConfig);
 
             peer.on('open', (id) => {
                 console.log("My Peer ID is: " + id);
@@ -710,9 +719,8 @@
                 if (err.type === 'browser-incompatible') msg = "Browser doesn't support WebRTC.";
 
                 logStatus(msg, true);
-                alert(msg); // Ensure user sees it if they changed tabs
+                alert(msg);
 
-                // Allow retry after short delay
                 setTimeout(() => {
                     closeOnlineMenu();
                 }, 3000);
@@ -744,17 +752,14 @@
 
             initPeer((id) => {
                 logStatus("Connecting to Host...");
-                conn = peer.connect(hostId, {
-                    reliable: true
-                });
+
+                // Removed { reliable: true } which can cause issues
+                conn = peer.connect(hostId);
 
                 conn.on('open', () => {
                     logStatus("Connected to Host!");
                     setupConnection();
                 });
-
-                // Note: If connection fails, peer.on('error') with 'peer-unavailable' will trigger.
-                // We explicitly wait for 'open'.
 
                 // Safety timeout if connection hangs
                 setTimeout(() => {
