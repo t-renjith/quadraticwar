@@ -5,8 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Quadratic War</title>
-    <!-- Use PeerJS v1.4.7 for better compatibility and stability -->
-    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+    <!-- MQTT.js for Signaling -->
+    <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
     <style>
         /* --- Professional Dark Theme CSS --- */
         body {
@@ -158,7 +158,7 @@
                 <div id="hostIdDisplay" style="display:none;">
                     <p>Share this ID with your friend:</p>
                     <div class="p-id-display" id="myPeerId">...</div>
-                    <p style="font-size:12px; color:#A0AEC0;">Waiting for opponent connection...</p>
+                    <p style="font-size:12px; color:#A0AEC0;">Waiting for opponent to join...</p>
                 </div>
                 <div style="margin-top:20px;">
                     <button class="btn btn-secondary" onclick="closeOnlineMenu()">Cancel</button>
@@ -211,11 +211,20 @@
         let currentAnimation = null;
         let isAIThinking = false;
 
-        // --- PEERJS / ONLINE STATE ---
-        let peer = null;
-        let conn = null;
+        // --- ONLINE STATE ---
+        let mqttClient = null;
+        let rtcPeer = null;
+        let dataChannel = null;
         let myPlayerId = 0; // 1 = Red(Host), 2 = Blue(Guest)
         let onlineGameActive = false;
+        let currentRoomId = null;
+
+        const ICE_SERVERS = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
 
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
@@ -612,7 +621,6 @@
             if (gameState === "MENU") {
                 drawMenu();
             } else {
-                // GAMEPLAY STATE
                 if (currentAnimation) {
                     const elapsed = timestamp - currentAnimation.startTime;
                     if (currentAnimation.phase === 'IDENTIFY') {
@@ -641,7 +649,6 @@
                         currentAnimation = animationQueue.shift();
                         currentAnimation.startTime = timestamp;
                     } else {
-                        // Turn Logic
                         if (gameMode === "PVC" && currentPlayer === 1 && !isAIThinking) {
                             triggerComputerTurn();
                         }
@@ -670,7 +677,6 @@
                     statusText.style.color = "#A0AEC0";
                 }
             } else {
-                // PVP
                 const pName = currentPlayer === 1 ? "Red" : "Blue";
                 statusText.innerText = `Player ${currentPlayer} (${pName})'s Turn`;
                 statusText.style.color = currentPlayer === 1 ? COLORS.RED_COIN_LIGHT : COLORS.BLUE_COIN_LIGHT;
@@ -678,8 +684,7 @@
         }
 
 
-        // --- PEERJS IMPLEMENTATION ---
-        let connectionTimeout = null;
+        // --- MQTT + WebRTC IMPLEMENTATION ---
 
         function logStatus(msg, isError = false) {
             console.log(msg);
@@ -690,120 +695,164 @@
             }
         }
 
-        function initPeer(callback) {
-            document.getElementById('lobbyParams').style.display = 'none';
-            document.getElementById('lobbyStatus').style.display = 'block';
-            logStatus("Initializing Peer...");
+        function initMQTT(roomId, isHost) {
+            currentRoomId = roomId;
+            logStatus("Connecting to Signal Server (MQTT)...");
 
-            // Use old v1.4.7 which is more stable with default cloud
-            const peerConfig = {
-                debug: 2
-            };
+            const clientId = 'qwar_' + Math.random().toString(16).substr(2, 8);
+            const brokerUrl = 'wss://broker.emqx.io:8084/mqtt';
 
-            peer = new Peer(null, peerConfig);
-
-            peer.on('open', (id) => {
-                console.log("My Peer ID is: " + id);
-                if (callback) callback(id);
+            mqttClient = mqtt.connect(brokerUrl, {
+                clientId: clientId,
+                clean: true
             });
 
-            peer.on('error', (err) => {
-                console.error(err);
-                let msg = "Error: " + err.type;
-                if (err.type === 'peer-unavailable') msg = "Host ID not found. Check the ID.";
-                if (err.type === 'network') msg = "Network Error. Check internet.";
-                if (err.type === 'browser-incompatible') msg = "Browser doesn't support WebRTC.";
+            mqttClient.on('connect', () => {
+                logStatus("Signaling Connected. Handshaking...");
 
-                logStatus(msg, true);
-                alert(msg);
+                // Host listens on 'tohost', Joiner listens on 'tojoin'
+                const subTopic = isHost ? `qwar/${roomId}/tohost` : `qwar/${roomId}/tojoin`;
 
-                if (connectionTimeout) clearTimeout(connectionTimeout);
-                setTimeout(() => {
-                    closeOnlineMenu();
-                }, 3000);
-            });
-
-            peer.on('disconnected', () => {
-                logStatus("Disconnected from PeerServer. Reconnecting...");
-                peer.reconnect();
-            });
-        }
-
-        function startHost() {
-            initPeer((id) => {
-                logStatus("Hosting Game. Waiting for opponent...");
-                document.getElementById('hostIdDisplay').style.display = 'block';
-                document.getElementById('myPeerId').innerText = id;
-
-                peer.on('connection', (c) => {
-                    conn = c;
-                    logStatus("Opponent Connecting...");
-                    setupConnection();
-                });
-            });
-        }
-
-        function joinGame() {
-            const hostId = document.getElementById('joinInput').value.trim();
-            if (!hostId) { alert("Please enter a Host ID"); return; }
-
-            initPeer((id) => {
-                logStatus("Connecting to Host...");
-
-                conn = peer.connect(hostId);
-
-                conn.on('open', () => {
-                    logStatus("Connected to Host!");
-                    setupConnection();
-                });
-
-                // Safety timeout if connection hangs
-                if (connectionTimeout) clearTimeout(connectionTimeout);
-                connectionTimeout = setTimeout(() => {
-                    if (!onlineGameActive && conn && !conn.open && document.getElementById('hostIdDisplay').style.display === 'none') {
-                        logStatus("Connection timed out. Retrying usually fixes this.", true);
-                        alert("Connection timed out. Please try Joining again.");
-                        closeOnlineMenu();
+                mqttClient.subscribe(subTopic, (err) => {
+                    if (err) {
+                        logStatus("Signaling Subscribe Error", true);
+                    } else {
+                        if (!isHost) {
+                            // Joiner initiates WebRTC
+                            setupWebRTC(false);
+                        } else {
+                            // Host waits for offer
+                            setupWebRTC(true);
+                        }
                     }
-                }, 8000);
-            });
-        }
-
-        function setupConnection() {
-            if (connectionTimeout) clearTimeout(connectionTimeout);
-            if (onlineGameActive) return;
-
-            conn.on('data', (data) => {
-                console.log("Received data:", data);
-                handleData(data);
+                });
             });
 
-            conn.on('open', () => {
-                if (myPlayerId === 1) { // Host
-                    conn.send({ type: 'START', player: 2 });
+            mqttClient.on('message', (topic, message) => {
+                try {
+                    const data = JSON.parse(message.toString());
+                    handleSignalMessage(data);
+                } catch (e) {
+                    console.error("Signal parsing error", e);
                 }
             });
 
-            // If I am the guest (Initiator of connection), I wait for 'START' data
-            if (conn.open && myPlayerId === 1) {
-                conn.send({ type: 'START', player: 2 });
-            }
-
-            conn.on('close', () => {
-                alert("Opponent disconnected.");
-                location.reload();
-            });
-
-            conn.on('error', (err) => {
-                logStatus("Connection Error: " + err, true);
+            mqttClient.on('error', (err) => {
+                logStatus("Signaling Error: " + err.message, true);
             });
         }
 
-        function handleData(data) {
+        function sendSignal(data) {
+            const pubTopic = myPlayerId === 1 ? `qwar/${currentRoomId}/tojoin` : `qwar/${currentRoomId}/tohost`;
+            if (mqttClient) {
+                mqttClient.publish(pubTopic, JSON.stringify(data));
+            }
+        }
+
+        function setupWebRTC(isHost) {
+            logStatus("Initializing WebRTC...");
+            rtcPeer = new RTCPeerConnection(ICE_SERVERS);
+
+            rtcPeer.onicecandidate = (event) => {
+                if (event.candidate) {
+                    sendSignal({ type: 'candidate', candidate: event.candidate });
+                }
+            };
+
+            rtcPeer.oniceconnectionstatechange = () => {
+                console.log("ICE State:", rtcPeer.iceConnectionState);
+                if (rtcPeer.iceConnectionState === 'connected') {
+                    logStatus("P2P Connection Established!");
+                    // Signaling done, we can disconnect MQTT to save resources/conflicts
+                    setTimeout(() => {
+                        if (mqttClient) { mqttClient.end(); mqttClient = null; }
+                    }, 2000);
+                } else if (rtcPeer.iceConnectionState === 'disconnected') {
+                    alert("P2P Connection Lost");
+                    closeOnlineMenu();
+                }
+            };
+
+            if (isHost) {
+                myPlayerId = 1;
+                // Host creates Data Channel
+                dataChannel = rtcPeer.createDataChannel("game");
+                setupDataChannel(dataChannel);
+            } else {
+                myPlayerId = 2;
+                // Joiner waits for Data Channel
+                rtcPeer.ondatachannel = (event) => {
+                    dataChannel = event.channel;
+                    setupDataChannel(dataChannel);
+                };
+
+                // Joiner creates Offer
+                createOffer();
+            }
+        }
+
+        async function createOffer() {
+            try {
+                const offer = await rtcPeer.createOffer();
+                await rtcPeer.setLocalDescription(offer);
+                sendSignal({ type: 'offer', sdp: offer });
+                logStatus("Sent Offer...");
+            } catch (e) {
+                logStatus("Offer Error: " + e, true);
+            }
+        }
+
+        async function handleSignalMessage(data) {
+            if (!rtcPeer) return;
+
+            if (data.type === 'offer') {
+                if (myPlayerId !== 1) return; // Only host receives offer
+                logStatus("Received Offer. Sending Answer...");
+                await rtcPeer.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                const answer = await rtcPeer.createAnswer();
+                await rtcPeer.setLocalDescription(answer);
+                sendSignal({ type: 'answer', sdp: answer });
+
+            } else if (data.type === 'answer') {
+                if (myPlayerId !== 2) return; // Only joiner receives answer
+                logStatus("Received Answer. Connecting...");
+                await rtcPeer.setRemoteDescription(new RTCSessionDescription(data.sdp));
+
+            } else if (data.type === 'candidate') {
+                try {
+                    await rtcPeer.addIceCandidate(new RTCIceCandidate(data.candidate));
+                } catch (e) {
+                    console.error("Error adding candidate", e);
+                }
+            }
+        }
+
+        function setupDataChannel(channel) {
+            channel.onopen = () => {
+                logStatus("Game Ready!");
+                onlineGameActive = true;
+
+                // Give a moment for UI to update
+                setTimeout(() => {
+                    document.getElementById('onlineOverlay').style.display = 'none';
+                    if (myPlayerId === 1) {
+                        startGame("ONLINE");
+                        sendGameData({ type: 'START', player: 2 });
+                    }
+                }, 500);
+            };
+
+            channel.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleGameData(data);
+            };
+        }
+
+        function handleGameData(data) {
+            console.log("Game Data:", data);
             if (data.type === 'START') {
                 startGame("ONLINE");
-                myPlayerId = data.player; // Should be 2
-                onlineGameActive = true;
+                myPlayerId = data.player; // 2
                 document.getElementById('onlineOverlay').style.display = 'none';
                 resetStatusText();
             } else if (data.type === 'MOVE') {
@@ -811,23 +860,36 @@
             }
         }
 
+        function sendGameData(data) {
+            if (dataChannel && dataChannel.readyState === 'open') {
+                dataChannel.send(JSON.stringify(data));
+            }
+        }
+
+        function startHost() {
+            const roomId = Math.random().toString(36).substring(2, 7).toUpperCase();
+            document.getElementById('statusTitle').innerText = "Hosting Game";
+            document.getElementById('hostIdDisplay').style.display = 'block';
+            document.getElementById('myPeerId').innerText = roomId;
+            initMQTT(roomId, true);
+        }
+
+        function joinGame() {
+            const hostId = document.getElementById('joinInput').value.trim().toUpperCase();
+            if (!hostId) { alert("Please enter a Host ID"); return; }
+            initMQTT(hostId, false);
+        }
+
         function sendMove(start, end) {
-            if (conn && conn.open) {
-                conn.send({ type: 'MOVE', start: start, end: end });
-            } else {
-                console.error("Connection lost, cannot send move");
-                alert("Connection lost!");
+            if (onlineGameActive) {
+                sendGameData({ type: 'MOVE', start: start, end: end });
             }
         }
 
         function executeMove(start, end) {
-            // Execute move received from network or local
             const startKey = `${start.r},${start.c}`;
             const endKey = `${end.r},${end.c}`;
-
-            // Basic validation just in case
             if (!board[startKey]) return;
-
             board[endKey] = board[startKey];
             delete board[startKey];
 
@@ -847,14 +909,10 @@
         }
 
         function closeOnlineMenu() {
-            if (connectionTimeout) clearTimeout(connectionTimeout);
             document.getElementById('onlineOverlay').style.display = 'none';
-            // Reset PeerJS connection if any
-            if (peer) {
-                peer.destroy();
-                peer = null;
-            }
-            conn = null;
+            if (mqttClient) { mqttClient.end(); mqttClient = null; }
+            if (rtcPeer) { rtcPeer.close(); rtcPeer = null; }
+            dataChannel = null;
             myPlayerId = 0;
             onlineGameActive = false;
             gameState = "MENU";
@@ -870,7 +928,6 @@
             const x = (e.clientX - rect.left) * scaleX;
             const y = (e.clientY - rect.top) * scaleY;
 
-            // MENU CLICKS
             if (gameState === "MENU") {
                 if (x >= btnPVP.x && x <= btnPVP.x + btnPVP.w && y >= btnPVP.y && y <= btnPVP.y + btnPVP.h) {
                     startGame("PVP");
@@ -882,15 +939,9 @@
                 return;
             }
 
-            // GAMEPLAY CLICKS
             if (currentAnimation || animationQueue.length > 0 || isAIThinking) return;
-
-            // Prevent Human from clicking during Computer's turn in PVC mode
             if (gameMode === "PVC" && currentPlayer === 1) return;
-
-            // Prevent Human from clicking during Opponent's turn in Online mode
             if (gameMode === "ONLINE" && currentPlayer !== myPlayerId) return;
-
 
             const c = Math.floor(x / TILE_SIZE);
             const r = Math.floor(y / TILE_SIZE);
@@ -903,13 +954,11 @@
                 }
                 const isMoveValid = validMoves.some(m => m.r === r && m.c === c);
                 if (isMoveValid) {
-                    // Start Move Logic --
                     if (gameMode === 'ONLINE') {
                         sendMove({ r: startR, c: startC }, { r, c });
                         executeMove({ r: startR, c: startC }, { r, c });
                         selectedCoin = null; validMoves = [];
                     } else {
-                        // Local execution
                         board[`${r},${c}`] = board[`${startR},${startC}`];
                         delete board[`${startR},${startC}`];
                         selectedCoin = null; validMoves = [];
@@ -921,7 +970,6 @@
                             resetStatusText();
                         }
                     }
-                    // -- End Move Logic
                 } else {
                     if (board[key] && board[key].p === currentPlayer) {
                         selectedCoin = { r, c }; validMoves = getValidMoves(r, c, currentPlayer);
@@ -935,7 +983,6 @@
         });
 
         requestAnimationFrame(update);
-
     </script>
 </body>
 
