@@ -1,18 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Quadratic War</title>
-    <!-- MQTT.js for Signaling -->
-    <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
     <style>
         /* --- Professional Dark Theme CSS --- */
         body {
-            background-color: #1A1A2E;
+            background-color: #1A1A2E; 
             color: #E0E5EC;
-            font-family: 'Times New Roman', Times, serif;
+            font-family: 'Times New Roman', Times, serif; 
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -22,968 +19,588 @@
             min-height: 100vh;
             overflow: hidden;
         }
-
-        h1 {
-            margin: 10px 0;
+        h1 { 
+            margin: 10px 0; 
             font-weight: normal;
             letter-spacing: 1px;
             font-style: italic;
             font-size: 24px;
         }
-
-        .game-container {
-            position: relative;
-            width: 100%;
-            max-width: 560px;
-        }
-
         canvas {
-            background-color: #2D3748;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+            background-color: #2D3748; 
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
             border-radius: 4px;
-            width: 100%;
-            height: auto;
-            touch-action: none;
+            width: 100%;           
+            max-width: 560px;      
+            height: auto;          
+            touch-action: none;    
             -webkit-tap-highlight-color: transparent;
-            display: block;
         }
-
         .status {
             margin-top: 15px;
-            font-size: 18px;
+            font-size: 18px; 
             font-weight: normal;
-            color: #A0AEC0;
-            height: 30px;
+            color: #A0AEC0; 
+            height: 30px; 
             text-align: center;
-        }
-
-        /* --- Online Menu Overlay --- */
-        #onlineOverlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(26, 26, 46, 0.95);
-            display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 10;
-            border-radius: 4px;
-        }
-
-        .overlay-content {
-            text-align: center;
-            width: 80%;
-        }
-
-        .overlay-title {
-            font-size: 24px;
-            color: #4299E1;
-            margin-bottom: 20px;
-            font-style: italic;
-        }
-
-        .input-group {
-            margin-bottom: 15px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        input[type="text"] {
-            padding: 10px;
-            border-radius: 4px;
-            border: 1px solid #4A5568;
-            background-color: #2D3748;
-            color: #FFFFFF;
-            font-size: 16px;
-            text-align: center;
-        }
-
-        .btn {
-            background-color: #2B6CB0;
-            color: white;
-            border: none;
-            padding: 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            font-family: 'Times New Roman', serif;
-            transition: background 0.2s;
-        }
-
-        .btn:hover {
-            background-color: #4299E1;
-        }
-
-        .btn-secondary {
-            background-color: #4A5568;
-        }
-
-        .btn-secondary:hover {
-            background-color: #718096;
-        }
-
-        .p-id-display {
-            font-family: monospace;
-            background: #000;
-            padding: 8px;
-            border: 1px solid #555;
-            margin: 10px 0;
-            user-select: text;
         }
     </style>
 </head>
-
 <body>
 
     <h1>Quadratic War</h1>
-    <div class="game-container">
-        <canvas id="gameCanvas" width="560" height="630"></canvas>
-        <div id="onlineOverlay">
-            <div class="overlay-content" id="lobbyParams">
-                <div class="overlay-title">Online Multiplayer</div>
-                <div class="input-group">
-                    <button class="btn" onclick="startHost()">Host Game</button>
-                    <div style="font-size: 14px; opacity: 0.7;">- OR -</div>
-                    <input type="text" id="joinInput" placeholder="Enter Host ID">
-                    <button class="btn" onclick="joinGame()">Join Game</button>
-                    <button class="btn btn-secondary" onclick="closeOnlineMenu()">Back</button>
-                </div>
-            </div>
-            <div class="overlay-content" id="lobbyStatus" style="display:none;">
-                <div class="overlay-title" id="statusTitle">Connecting...</div>
-                <div id="hostIdDisplay" style="display:none;">
-                    <p>Share this ID with your friend:</p>
-                    <div class="p-id-display" id="myPeerId">...</div>
-                    <p style="font-size:12px; color:#A0AEC0;">Waiting for opponent to join...</p>
-                </div>
-                <div style="margin-top:20px;">
-                    <button class="btn btn-secondary" onclick="closeOnlineMenu()">Cancel</button>
-                </div>
-            </div>
-        </div>
-    </div>
+    <canvas id="gameCanvas" width="560" height="630"></canvas>
     <div class="status" id="statusText">Select a Game Mode</div>
 
-    <script>
-        // --- CONFIGURATION ---
-        const BOARD_ROWS = 9;
-        const BOARD_COLS = 8;
-        const TILE_SIZE = 70;
+<script>
+    // --- CONFIGURATION ---
+    const BOARD_ROWS = 9;
+    const BOARD_COLS = 8;
+    const TILE_SIZE = 70;
+    
+    // --- COLORS ---
+    const COLORS = {
+        WHITE: "#FFFFFF",
+        BOARD_LIGHT: "#E0E5EC", 
+        BOARD_DARK:  "#4A5568", 
+        RED_COIN_BASE: "#9B2C2C",   
+        RED_COIN_LIGHT: "#C53030",  
+        BLUE_COIN_BASE: "#2B6CB0",  
+        BLUE_COIN_LIGHT: "#4299E1", 
+        HIGHLIGHT_SELECT: "#F6E05E", 
+        HIGHLIGHT_VALID:  "#48BB78", 
+        ANIM_IDENTIFY: "#63B3ED", 
+        ANIM_SUCCESS:  "#38A169", 
+        ANIM_FAIL:     "#E53E3E",
+        MENU_BTN: "#2B6CB0",
+        MENU_BTN_HOVER: "#4299E1"
+    };
 
-        // --- COLORS ---
-        const COLORS = {
-            WHITE: "#FFFFFF",
-            BOARD_LIGHT: "#E0E5EC",
-            BOARD_DARK: "#4A5568",
-            RED_COIN_BASE: "#9B2C2C",
-            RED_COIN_LIGHT: "#C53030",
-            BLUE_COIN_BASE: "#2B6CB0",
-            BLUE_COIN_LIGHT: "#4299E1",
-            HIGHLIGHT_SELECT: "#F6E05E",
-            HIGHLIGHT_VALID: "#48BB78",
-            ANIM_IDENTIFY: "#63B3ED",
-            ANIM_SUCCESS: "#38A169",
-            ANIM_FAIL: "#E53E3E",
-            MENU_BTN: "#2B6CB0",
-            MENU_BTN_HOVER: "#4299E1"
-        };
+    // Algebraic Terms
+    const COIN_TERMS = {
+        1: ["-4x^2", "-3x^2", "-2x^2", "-x^2", "x^2", "2x^2", "3x^2", "4x^2"], 
+        2: ["-4x", "-3x", "-2x", "-x", "x", "2x", "3x", "4x"],
+        3: ["-4", "-3", "-2", "-1", "1", "2", "3", "4"]
+    };
 
-        // Algebraic Terms
-        const COIN_TERMS = {
-            1: ["-4x^2", "-3x^2", "-2x^2", "-x^2", "x^2", "2x^2", "3x^2", "4x^2"],
-            2: ["-4x", "-3x", "-2x", "-x", "x", "2x", "3x", "4x"],
-            3: ["-4", "-3", "-2", "-1", "1", "2", "3", "4"]
-        };
+    // --- STATE ---
+    let gameState = "MENU"; // "MENU" or "PLAYING"
+    let gameMode = null;    // "PVP" or "PVC" (Player vs Computer)
+    
+    let board = {}; 
+    let selectedCoin = null; 
+    let currentPlayer = 2; // Blue Starts
+    let validMoves = []; 
+    let animationQueue = [];
+    let currentAnimation = null;
+    let isAIThinking = false;
 
-        // --- STATE ---
-        let gameState = "MENU"; // "MENU" or "PLAYING"
-        let gameMode = null;    // "PVP" or "PVC" (Player vs Computer)
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('statusText');
 
-        let board = {};
-        let selectedCoin = null;
-        let currentPlayer = 2; // Blue Starts
-        let validMoves = [];
-        let animationQueue = [];
-        let currentAnimation = null;
-        let isAIThinking = false;
+    // --- BUTTONS FOR MENU ---
+    const btnPVP = { x: 130, y: 250, w: 300, h: 60, text: "2 Players" };
+    const btnPVC = { x: 130, y: 340, w: 300, h: 60, text: "Vs Computer" };
 
-        // --- ONLINE STATE ---
-        let mqttClient = null;
-        let rtcPeer = null;
-        let dataChannel = null;
-        let myPlayerId = 0; // 1 = Red(Host), 2 = Blue(Guest)
-        let onlineGameActive = false;
-        let currentRoomId = null;
+    // --- LATEX FORMATTING ---
+    function toLatexStyle(str) {
+        let latexStr = str.replace(/-/g, "−");
+        latexStr = latexStr.replace(/\^2/g, "²");
+        return latexStr;
+    }
 
-        const ICE_SERVERS = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
-        };
+    // --- INITIALIZATION ---
+    function getTermAtPos(player, termType, col) {
+        const terms = COIN_TERMS[termType];
+        if (player === 1) return terms[terms.length - 1 - col];
+        else return terms[col];
+    }
 
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const statusText = document.getElementById('statusText');
+    function initBoard() {
+        board = {};
+        for (let c = 0; c < BOARD_COLS; c++) {
+            board[`0,${c}`] = { p: 1, term: getTermAtPos(1, 1, c) };
+            board[`1,${c}`] = { p: 1, term: getTermAtPos(1, 2, c) };
+            board[`2,${c}`] = { p: 1, term: getTermAtPos(1, 3, c) };
+        }
+        for (let c = 0; c < BOARD_COLS; c++) {
+            board[`6,${c}`] = { p: 2, term: getTermAtPos(2, 3, c) };
+            board[`7,${c}`] = { p: 2, term: getTermAtPos(2, 2, c) };
+            board[`8,${c}`] = { p: 2, term: getTermAtPos(2, 1, c) };
+        }
+    }
 
-        // --- BUTTONS FOR MENU ---
-        const btnPVP = { x: 130, y: 190, w: 300, h: 60, text: "2 Players (Local)" };
-        const btnPVC = { x: 130, y: 270, w: 300, h: 60, text: "Vs Computer" };
-        const btnOnline = { x: 130, y: 350, w: 300, h: 60, text: "Online PvP" };
+    function startGame(mode) {
+        gameMode = mode;
+        gameState = "PLAYING";
+        currentPlayer = 2; // Blue Always Starts
+        selectedCoin = null;
+        validMoves = [];
+        animationQueue = [];
+        currentAnimation = null;
+        initBoard();
+        resetStatusText();
+    }
 
-        // --- LATEX FORMATTING ---
-        function toLatexStyle(str) {
-            let latexStr = str.replace(/-/g, "−");
-            latexStr = latexStr.replace(/\^2/g, "²");
-            return latexStr;
+    // --- MATH & MOVEMENT LOGIC (Standard) ---
+    function parseTerm(termStr) {
+        termStr = termStr.replace(/\s/g, '');
+        let coeff = 0, degree = 0;
+        if (termStr.includes("x^2")) {
+            degree = 2;
+            let cStr = termStr.replace("x^2", "");
+            if (cStr === "" || cStr === "+") coeff = 1;
+            else if (cStr === "-") coeff = -1;
+            else coeff = parseInt(cStr);
+        } else if (termStr.includes("x")) {
+            degree = 1;
+            let cStr = termStr.replace("x", "");
+            if (cStr === "" || cStr === "+") coeff = 1;
+            else if (cStr === "-") coeff = -1;
+            else coeff = parseInt(cStr);
+        } else {
+            degree = 0; coeff = parseInt(termStr);
+        }
+        return { coeff, degree };
+    }
+
+    function isValidMove(startR, startC, endR, endC, player) {
+        if (startR === endR && startC === endC) return false;
+        const startKey = `${startR},${startC}`;
+        const endKey = `${endR},${endC}`;
+        if (!board[startKey]) return false;
+        if (board[endKey]) return false; 
+
+        const term = board[startKey].term;
+        const isQuad = term.includes("x^2");
+        const isLin = term.includes("x") && !isQuad;
+        const isConst = !isQuad && !isLin;
+
+        const maxRange = isQuad ? 3 : (isLin ? 2 : 1);
+        const rowDiff = endR - startR;
+        const colDiff = endC - startC;
+        const absRow = Math.abs(rowDiff);
+        const absCol = Math.abs(colDiff);
+        const maxStep = Math.max(absRow, absCol);
+
+        if (maxStep > maxRange) return false;
+
+        if (isConst) {
+            if (absCol !== 0) return false;
+            if (player === 1 && rowDiff !== 1) return false;
+            if (player === 2 && rowDiff !== -1) return false;
+        } else if (isLin) {
+            if (absRow > 0 && absCol > 0) return false;
+        } else if (isQuad) {
+            const isCardinal = (absRow === 0 || absCol === 0);
+            const isDiagonal = (absRow === absCol);
+            if (!isCardinal && !isDiagonal) return false;
         }
 
-        // --- INITIALIZATION ---
-        function getTermAtPos(player, termType, col) {
-            const terms = COIN_TERMS[termType];
-            if (player === 1) return terms[terms.length - 1 - col];
-            else return terms[col];
+        const stepR = rowDiff === 0 ? 0 : (rowDiff > 0 ? 1 : -1);
+        const stepC = colDiff === 0 ? 0 : (colDiff > 0 ? 1 : -1);
+        let curR = startR + stepR;
+        let curC = startC + stepC;
+        while (curR !== endR || curC !== endC) {
+            if (board[`${curR},${curC}`]) return false; 
+            curR += stepR;
+            curC += stepC;
         }
+        return true;
+    }
 
-        function initBoard() {
-            board = {};
-            for (let c = 0; c < BOARD_COLS; c++) {
-                board[`0,${c}`] = { p: 1, term: getTermAtPos(1, 1, c) };
-                board[`1,${c}`] = { p: 1, term: getTermAtPos(1, 2, c) };
-                board[`2,${c}`] = { p: 1, term: getTermAtPos(1, 3, c) };
+    function getValidMoves(r, c, player) {
+        let moves = [];
+        for (let i = 0; i < BOARD_ROWS; i++) {
+            for (let j = 0; j < BOARD_COLS; j++) {
+                if (isValidMove(r, c, i, j, player)) {
+                    moves.push({ r: i, c: j });
+                }
             }
-            for (let c = 0; c < BOARD_COLS; c++) {
-                board[`6,${c}`] = { p: 2, term: getTermAtPos(2, 3, c) };
-                board[`7,${c}`] = { p: 2, term: getTermAtPos(2, 2, c) };
-                board[`8,${c}`] = { p: 2, term: getTermAtPos(2, 1, c) };
+        }
+        return moves;
+    }
+
+    // --- EQUATION DETECTION ---
+    function getContiguousChain(startR, startC, deltaR, deltaC) {
+        let chain = [];
+        let currR = startR + deltaR;
+        let currC = startC + deltaC;
+        while (currR >= 0 && currR < BOARD_ROWS && currC >= 0 && currC < BOARD_COLS) {
+            if (board[`${currR},${currC}`]) {
+                chain.push({ r: currR, c: currC });
+                currR += deltaR;
+                currC += deltaC;
+            } else { break; }
+        }
+        return chain;
+    }
+
+    function checkForEquations(r, c, activePlayer) {
+        const detected = [];
+        const opponent = activePlayer === 1 ? 2 : 1;
+        const axes = [
+            { neg: [0, -1], pos: [0, 1] }, { neg: [-1, 0], pos: [1, 0] },
+            { neg: [-1, -1], pos: [1, 1] }, { neg: [-1, 1], pos: [1, -1] }
+        ];
+
+        axes.forEach(axis => {
+            const negChain = getContiguousChain(r, c, axis.neg[0], axis.neg[1]);
+            const posChain = getContiguousChain(r, c, axis.pos[0], axis.pos[1]);
+            const fullChain = [...negChain.reverse(), {r, c}, ...posChain];
+
+            if (fullChain.length < 2) return;
+            const players = new Set();
+            const terms = [];
+            fullChain.forEach(pos => {
+                const piece = board[`${pos.r},${pos.c}`];
+                players.add(piece.p);
+                terms.push(piece.term);
+            });
+
+            if (players.size < 2) return;
+
+            let a = 0, b = 0, constant = 0;
+            terms.forEach(t => {
+                const p = parseTerm(t);
+                if (p.degree === 2) a += p.coeff;
+                else if (p.degree === 1) b += p.coeff;
+                else constant += p.coeff;
+            });
+
+            if (a === 0) return;
+            const discriminant = (b * b) - (4 * a * constant);
+            const hasRealSolutions = discriminant >= 0;
+            const targetColor = hasRealSolutions ? opponent : activePlayer;
+            const removeList = [];
+            fullChain.forEach(pos => {
+                if (board[`${pos.r},${pos.c}`].p === targetColor) removeList.push(pos);
+            });
+
+            detected.push({
+                coords: fullChain,
+                remove: removeList,
+                isSuccess: hasRealSolutions,
+                polyStr: `${a}x^2 + ${b}x + ${constant}`,
+                phase: 'IDENTIFY',
+                startTime: performance.now()
+            });
+        });
+        return detected;
+    }
+
+    // --- ARTIFICIAL INTELLIGENCE ---
+    function triggerComputerTurn() {
+        if (isAIThinking || gameState !== "PLAYING") return;
+        isAIThinking = true;
+        statusText.innerText = "Computer is thinking...";
+        statusText.style.color = COLORS.RED_COIN_LIGHT;
+
+        setTimeout(() => {
+            makeBestMove();
+            isAIThinking = false;
+        }, 800);
+    }
+
+    function makeBestMove() {
+        let allMoves = [];
+        for (let key in board) {
+            if (board[key].p === 1) { // Computer is Red (1)
+                const [r, c] = key.split(',').map(Number);
+                const moves = getValidMoves(r, c, 1);
+                moves.forEach(m => {
+                    allMoves.push({ start: {r, c}, end: {r: m.r, c: m.c} });
+                });
             }
         }
 
-        function startGame(mode) {
-            gameMode = mode;
-            gameState = "PLAYING";
-            currentPlayer = 2; // Blue Always Starts
-            selectedCoin = null;
-            validMoves = [];
-            animationQueue = [];
-            currentAnimation = null;
-            initBoard();
-            resetStatusText();
+        if (allMoves.length === 0) {
+            currentPlayer = 2; resetStatusText(); return;
         }
 
-        // --- MATH & MOVEMENT LOGIC (Standard) ---
-        function parseTerm(termStr) {
-            termStr = termStr.replace(/\s/g, '');
-            let coeff = 0, degree = 0;
-            if (termStr.includes("x^2")) {
-                degree = 2;
-                let cStr = termStr.replace("x^2", "");
-                if (cStr === "" || cStr === "+") coeff = 1;
-                else if (cStr === "-") coeff = -1;
-                else coeff = parseInt(cStr);
-            } else if (termStr.includes("x")) {
-                degree = 1;
-                let cStr = termStr.replace("x", "");
-                if (cStr === "" || cStr === "+") coeff = 1;
-                else if (cStr === "-") coeff = -1;
-                else coeff = parseInt(cStr);
+        let bestScore = -Infinity;
+        let candidates = [];
+
+        allMoves.forEach(move => {
+            let score = 0;
+            const startKey = `${move.start.r},${move.start.c}`;
+            const endKey = `${move.end.r},${move.end.c}`;
+            const movingPiece = board[startKey];
+            delete board[startKey];
+            board[endKey] = movingPiece;
+
+            const equations = checkForEquations(move.end.r, move.end.c, 1);
+            
+            delete board[endKey];
+            board[startKey] = movingPiece;
+
+            if (equations.length > 0) {
+                equations.forEach(eq => {
+                    if (eq.isSuccess) score += 100 + (eq.remove.length * 10);
+                    else score -= 1000; 
+                });
             } else {
-                degree = 0; coeff = parseInt(termStr);
+                // Heuristic: Advance forward, prefer center
+                score += (move.end.r - move.start.r) * 2; 
+                if(move.end.c > 2 && move.end.c < 5) score += 1;
+                score += Math.random(); 
             }
-            return { coeff, degree };
+
+            if (score > bestScore) {
+                bestScore = score; candidates = [move];
+            } else if (score === bestScore) {
+                candidates.push(move);
+            }
+        });
+
+        const selectedMove = candidates[Math.floor(Math.random() * candidates.length)];
+        const startKey = `${selectedMove.start.r},${selectedMove.start.c}`;
+        const endKey = `${selectedMove.end.r},${selectedMove.end.c}`;
+        
+        board[endKey] = board[startKey];
+        delete board[startKey];
+
+        const equations = checkForEquations(selectedMove.end.r, selectedMove.end.c, 1);
+        if (equations.length > 0) {
+            animationQueue.push(...equations);
+        } else {
+            currentPlayer = 2; resetStatusText();
         }
+    }
 
-        function isValidMove(startR, startC, endR, endC, player) {
-            if (startR === endR && startC === endC) return false;
-            const startKey = `${startR},${startC}`;
-            const endKey = `${endR},${endC}`;
-            if (!board[startKey]) return false;
-            if (board[endKey]) return false;
+    // --- DRAWING ---
+    function drawMenu() {
+        ctx.fillStyle = "#1A1A2E"; 
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            const term = board[startKey].term;
-            const isQuad = term.includes("x^2");
-            const isLin = term.includes("x") && !isQuad;
-            const isConst = !isQuad && !isLin;
+        // Draw Buttons
+        ctx.fillStyle = COLORS.MENU_BTN;
+        ctx.fillRect(btnPVP.x, btnPVP.y, btnPVP.w, btnPVP.h);
+        ctx.fillRect(btnPVC.x, btnPVC.y, btnPVC.w, btnPVC.h);
 
-            const maxRange = isQuad ? 3 : (isLin ? 2 : 1);
-            const rowDiff = endR - startR;
-            const colDiff = endC - startC;
-            const absRow = Math.abs(rowDiff);
-            const absCol = Math.abs(colDiff);
-            const maxStep = Math.max(absRow, absCol);
+        // Draw Border
+        ctx.strokeStyle = COLORS.WHITE;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(btnPVP.x, btnPVP.y, btnPVP.w, btnPVP.h);
+        ctx.strokeRect(btnPVC.x, btnPVC.y, btnPVC.w, btnPVC.h);
 
-            if (maxStep > maxRange) return false;
+        // Draw Text
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = "24px 'Times New Roman', serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(btnPVP.text, btnPVP.x + btnPVP.w/2, btnPVP.y + btnPVP.h/2);
+        ctx.fillText(btnPVC.text, btnPVC.x + btnPVC.w/2, btnPVC.y + btnPVC.h/2);
 
-            if (isConst) {
-                if (absCol !== 0) return false;
-                if (player === 1 && rowDiff !== 1) return false;
-                if (player === 2 && rowDiff !== -1) return false;
-            } else if (isLin) {
-                if (absRow > 0 && absCol > 0) return false;
-            } else if (isQuad) {
-                const isCardinal = (absRow === 0 || absCol === 0);
-                const isDiagonal = (absRow === absCol);
-                if (!isCardinal && !isDiagonal) return false;
-            }
+        // Title Decoration
+        ctx.font = "italic 36px 'Times New Roman', serif";
+        ctx.fillStyle = COLORS.BLUE_COIN_LIGHT;
+        ctx.fillText("Main Menu", canvas.width/2, 150);
+    }
 
-            const stepR = rowDiff === 0 ? 0 : (rowDiff > 0 ? 1 : -1);
-            const stepC = colDiff === 0 ? 0 : (colDiff > 0 ? 1 : -1);
-            let curR = startR + stepR;
-            let curC = startC + stepC;
-            while (curR !== endR || curC !== endC) {
-                if (board[`${curR},${curC}`]) return false;
-                curR += stepR;
-                curC += stepC;
-            }
-            return true;
-        }
+    function drawBoard() {
+        ctx.clearRect(0,0, canvas.width, canvas.height);
 
-        function getValidMoves(r, c, player) {
-            let moves = [];
-            for (let i = 0; i < BOARD_ROWS; i++) {
-                for (let j = 0; j < BOARD_COLS; j++) {
-                    if (isValidMove(r, c, i, j, player)) {
-                        moves.push({ r: i, c: j });
+        // 1. Draw Tiles
+        for (let r = 0; r < BOARD_ROWS; r++) {
+            for (let c = 0; c < BOARD_COLS; c++) {
+                const x = c * TILE_SIZE;
+                const y = r * TILE_SIZE;
+                ctx.fillStyle = (r + c) % 2 === 0 ? COLORS.BOARD_LIGHT : COLORS.BOARD_DARK;
+                ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+
+                if (!currentAnimation && currentPlayer !== 1 && gameMode === 'PVC') {
+                   // In PVC, don't show computer moves
+                } 
+                // Show valid moves if it's human's turn (Always Human in PVP, Only Player 2 in PVC)
+                const isHumanTurn = (gameMode === 'PVP') || (gameMode === 'PVC' && currentPlayer === 2);
+
+                if (!currentAnimation && isHumanTurn) {
+                    const isValid = validMoves.some(m => m.r === r && m.c === c);
+                    if (isValid) {
+                        ctx.strokeStyle = COLORS.HIGHLIGHT_VALID;
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
                     }
                 }
             }
-            return moves;
         }
 
-        // --- EQUATION DETECTION ---
-        function getContiguousChain(startR, startC, deltaR, deltaC) {
-            let chain = [];
-            let currR = startR + deltaR;
-            let currC = startC + deltaC;
-            while (currR >= 0 && currR < BOARD_ROWS && currC >= 0 && currC < BOARD_COLS) {
-                if (board[`${currR},${currC}`]) {
-                    chain.push({ r: currR, c: currC });
-                    currR += deltaR;
-                    currC += deltaC;
-                } else { break; }
-            }
-            return chain;
+        // 2. Animations
+        if (currentAnimation) {
+            const anim = currentAnimation;
+            let color = (anim.phase === 'IDENTIFY') ? COLORS.ANIM_IDENTIFY : (anim.isSuccess ? COLORS.ANIM_SUCCESS : COLORS.ANIM_FAIL);
+            ctx.globalAlpha = 0.5; ctx.fillStyle = color;
+            anim.coords.forEach(pos => ctx.fillRect(pos.c * TILE_SIZE, pos.r * TILE_SIZE, TILE_SIZE, TILE_SIZE));
+            ctx.globalAlpha = 1.0; ctx.strokeStyle = color; ctx.lineWidth = 4;
+            anim.coords.forEach(pos => ctx.strokeRect(pos.c * TILE_SIZE+2, pos.r * TILE_SIZE+2, TILE_SIZE-4, TILE_SIZE-4));
         }
 
-        function checkForEquations(r, c, activePlayer) {
-            const detected = [];
-            const opponent = activePlayer === 1 ? 2 : 1;
-            const axes = [
-                { neg: [0, -1], pos: [0, 1] }, { neg: [-1, 0], pos: [1, 0] },
-                { neg: [-1, -1], pos: [1, 1] }, { neg: [-1, 1], pos: [1, -1] }
-            ];
+        // 3. Coins
+        for (let key in board) {
+            const piece = board[key];
+            const [r, c] = key.split(',').map(Number);
+            const x = c * TILE_SIZE + TILE_SIZE / 2;
+            const y = r * TILE_SIZE + TILE_SIZE / 2;
+            const radius = TILE_SIZE / 2 - 6; 
 
-            axes.forEach(axis => {
-                const negChain = getContiguousChain(r, c, axis.neg[0], axis.neg[1]);
-                const posChain = getContiguousChain(r, c, axis.pos[0], axis.pos[1]);
-                const fullChain = [...negChain.reverse(), { r, c }, ...posChain];
-
-                if (fullChain.length < 2) return;
-                const players = new Set();
-                const terms = [];
-                fullChain.forEach(pos => {
-                    const piece = board[`${pos.r},${pos.c}`];
-                    players.add(piece.p);
-                    terms.push(piece.term);
-                });
-
-                if (players.size < 2) return;
-
-                let a = 0, b = 0, constant = 0;
-                terms.forEach(t => {
-                    const p = parseTerm(t);
-                    if (p.degree === 2) a += p.coeff;
-                    else if (p.degree === 1) b += p.coeff;
-                    else constant += p.coeff;
-                });
-
-                if (a === 0) return;
-                const discriminant = (b * b) - (4 * a * constant);
-                const hasRealSolutions = discriminant >= 0;
-                const targetColor = hasRealSolutions ? opponent : activePlayer;
-                const removeList = [];
-                fullChain.forEach(pos => {
-                    if (board[`${pos.r},${pos.c}`].p === targetColor) removeList.push(pos);
-                });
-
-                detected.push({
-                    coords: fullChain,
-                    remove: removeList,
-                    isSuccess: hasRealSolutions,
-                    polyStr: `${a}x^2 + ${b}x + ${constant}`,
-                    phase: 'IDENTIFY',
-                    startTime: performance.now()
-                });
-            });
-            return detected;
-        }
-
-        // --- ARTIFICIAL INTELLIGENCE ---
-        function triggerComputerTurn() {
-            if (isAIThinking || gameState !== "PLAYING") return;
-            isAIThinking = true;
-            statusText.innerText = "Computer is thinking...";
-            statusText.style.color = COLORS.RED_COIN_LIGHT;
-
-            setTimeout(() => {
-                makeBestMove();
-                isAIThinking = false;
-            }, 800);
-        }
-
-        function makeBestMove() {
-            let allMoves = [];
-            for (let key in board) {
-                if (board[key].p === 1) { // Computer is Red (1)
-                    const [r, c] = key.split(',').map(Number);
-                    const moves = getValidMoves(r, c, 1);
-                    moves.forEach(m => {
-                        allMoves.push({ start: { r, c }, end: { r: m.r, c: m.c } });
-                    });
-                }
+            if (selectedCoin && selectedCoin.r === r && selectedCoin.c === c) {
+                ctx.beginPath();
+                ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
+                ctx.fillStyle = COLORS.HIGHLIGHT_SELECT;
+                ctx.fill();
             }
 
-            if (allMoves.length === 0) {
-                currentPlayer = 2; resetStatusText(); return;
-            }
-
-            let bestScore = -Infinity;
-            let candidates = [];
-
-            allMoves.forEach(move => {
-                let score = 0;
-                const startKey = `${move.start.r},${move.start.c}`;
-                const endKey = `${move.end.r},${move.end.c}`;
-                const movingPiece = board[startKey];
-                delete board[startKey];
-                board[endKey] = movingPiece;
-
-                const equations = checkForEquations(move.end.r, move.end.c, 1);
-
-                delete board[endKey];
-                board[startKey] = movingPiece;
-
-                if (equations.length > 0) {
-                    equations.forEach(eq => {
-                        if (eq.isSuccess) score += 100 + (eq.remove.length * 10);
-                        else score -= 1000;
-                    });
-                } else {
-                    // Heuristic: Advance forward, prefer center
-                    score += (move.end.r - move.start.r) * 2;
-                    if (move.end.c > 2 && move.end.c < 5) score += 1;
-                    score += Math.random();
-                }
-
-                if (score > bestScore) {
-                    bestScore = score; candidates = [move];
-                } else if (score === bestScore) {
-                    candidates.push(move);
-                }
-            });
-
-            const selectedMove = candidates[Math.floor(Math.random() * candidates.length)];
-            const startKey = `${selectedMove.start.r},${selectedMove.start.c}`;
-            const endKey = `${selectedMove.end.r},${selectedMove.end.c}`;
-
-            board[endKey] = board[startKey];
-            delete board[startKey];
-
-            const equations = checkForEquations(selectedMove.end.r, selectedMove.end.c, 1);
-            if (equations.length > 0) {
-                animationQueue.push(...equations);
+            const gradient = ctx.createRadialGradient(x, y, radius * 0.3, x, y, radius);
+            if (piece.p === 1) {
+                gradient.addColorStop(0, COLORS.RED_COIN_LIGHT);
+                gradient.addColorStop(1, COLORS.RED_COIN_BASE);
             } else {
-                currentPlayer = 2; resetStatusText();
+                gradient.addColorStop(0, COLORS.BLUE_COIN_LIGHT);
+                gradient.addColorStop(1, COLORS.BLUE_COIN_BASE);
             }
-        }
 
-        // --- DRAWING ---
-        function drawMenu() {
-            ctx.fillStyle = "#1A1A2E";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = gradient;
+            ctx.shadowColor = 'rgba(0,0,0,0.4)';
+            ctx.shadowBlur = 4;
+            ctx.shadowOffsetX = 2;
+            ctx.shadowOffsetY = 2;
+            ctx.fill();
+            ctx.shadowColor = 'transparent'; 
 
-            // Draw Buttons
-            ctx.fillStyle = COLORS.MENU_BTN;
-            ctx.fillRect(btnPVP.x, btnPVP.y, btnPVP.w, btnPVP.h);
-            ctx.fillRect(btnPVC.x, btnPVC.y, btnPVC.w, btnPVC.h);
-            ctx.fillRect(btnOnline.x, btnOnline.y, btnOnline.w, btnOnline.h);
-
-            // Draw Border
-            ctx.strokeStyle = COLORS.WHITE;
-            ctx.lineWidth = 2;
-            ctx.strokeRect(btnPVP.x, btnPVP.y, btnPVP.w, btnPVP.h);
-            ctx.strokeRect(btnPVC.x, btnPVC.y, btnPVC.w, btnPVC.h);
-            ctx.strokeRect(btnOnline.x, btnOnline.y, btnOnline.w, btnOnline.h);
-
-            // Draw Text
             ctx.fillStyle = COLORS.WHITE;
-            ctx.font = "24px 'Times New Roman', serif";
+            ctx.font = "italic 22px 'Times New Roman', Times, serif";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.fillText(btnPVP.text, btnPVP.x + btnPVP.w / 2, btnPVP.y + btnPVP.h / 2);
-            ctx.fillText(btnPVC.text, btnPVC.x + btnPVC.w / 2, btnPVC.y + btnPVC.h / 2);
-            ctx.fillText(btnOnline.text, btnOnline.x + btnOnline.w / 2, btnOnline.y + btnOnline.h / 2);
-
-            // Title Decoration
-            ctx.font = "italic 36px 'Times New Roman', serif";
-            ctx.fillStyle = COLORS.BLUE_COIN_LIGHT;
-            ctx.fillText("Main Menu", canvas.width / 2, 150);
+            ctx.fillText(toLatexStyle(piece.term), x, y);
         }
+    }
 
-        function drawBoard() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // 1. Draw Tiles
-            for (let r = 0; r < BOARD_ROWS; r++) {
-                for (let c = 0; c < BOARD_COLS; c++) {
-                    const x = c * TILE_SIZE;
-                    const y = r * TILE_SIZE;
-                    ctx.fillStyle = (r + c) % 2 === 0 ? COLORS.BOARD_LIGHT : COLORS.BOARD_DARK;
-                    ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
-
-                    if (!currentAnimation && currentPlayer !== 1 && gameMode === 'PVC') {
-                        // In PVC, don't show computer moves
-                    }
-                    // Show valid moves if it's human's turn (Always Human in PVP, Only Player 2 in PVC)
-                    const isHumanTurn = (gameMode === 'PVP') ||
-                        (gameMode === 'PVC' && currentPlayer === 2) ||
-                        (gameMode === 'ONLINE' && currentPlayer === myPlayerId);
-
-                    if (!currentAnimation && isHumanTurn) {
-                        const isValid = validMoves.some(m => m.r === r && m.c === c);
-                        if (isValid) {
-                            ctx.strokeStyle = COLORS.HIGHLIGHT_VALID;
-                            ctx.lineWidth = 3;
-                            ctx.strokeRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
-                        }
-                    }
-                }
-            }
-
-            // 2. Animations
+    // --- MAIN LOOP ---
+    function update(timestamp) {
+        if (gameState === "MENU") {
+            drawMenu();
+        } else {
+            // GAMEPLAY STATE
             if (currentAnimation) {
-                const anim = currentAnimation;
-                let color = (anim.phase === 'IDENTIFY') ? COLORS.ANIM_IDENTIFY : (anim.isSuccess ? COLORS.ANIM_SUCCESS : COLORS.ANIM_FAIL);
-                ctx.globalAlpha = 0.5; ctx.fillStyle = color;
-                anim.coords.forEach(pos => ctx.fillRect(pos.c * TILE_SIZE, pos.r * TILE_SIZE, TILE_SIZE, TILE_SIZE));
-                ctx.globalAlpha = 1.0; ctx.strokeStyle = color; ctx.lineWidth = 4;
-                anim.coords.forEach(pos => ctx.strokeRect(pos.c * TILE_SIZE + 2, pos.r * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4));
-            }
-
-            // 3. Coins
-            for (let key in board) {
-                const piece = board[key];
-                const [r, c] = key.split(',').map(Number);
-                const x = c * TILE_SIZE + TILE_SIZE / 2;
-                const y = r * TILE_SIZE + TILE_SIZE / 2;
-                const radius = TILE_SIZE / 2 - 6;
-
-                if (selectedCoin && selectedCoin.r === r && selectedCoin.c === c) {
-                    ctx.beginPath();
-                    ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
-                    ctx.fillStyle = COLORS.HIGHLIGHT_SELECT;
-                    ctx.fill();
-                }
-
-                const gradient = ctx.createRadialGradient(x, y, radius * 0.3, x, y, radius);
-                if (piece.p === 1) {
-                    gradient.addColorStop(0, COLORS.RED_COIN_LIGHT);
-                    gradient.addColorStop(1, COLORS.RED_COIN_BASE);
-                } else {
-                    gradient.addColorStop(0, COLORS.BLUE_COIN_LIGHT);
-                    gradient.addColorStop(1, COLORS.BLUE_COIN_BASE);
-                }
-
-                ctx.beginPath();
-                ctx.arc(x, y, radius, 0, Math.PI * 2);
-                ctx.fillStyle = gradient;
-                ctx.shadowColor = 'rgba(0,0,0,0.4)';
-                ctx.shadowBlur = 4;
-                ctx.shadowOffsetX = 2;
-                ctx.shadowOffsetY = 2;
-                ctx.fill();
-                ctx.shadowColor = 'transparent';
-
-                ctx.fillStyle = COLORS.WHITE;
-                ctx.font = "italic 22px 'Times New Roman', Times, serif";
-                ctx.textAlign = "center";
-                ctx.textBaseline = "middle";
-                ctx.fillText(toLatexStyle(piece.term), x, y);
-            }
-        }
-
-        // --- MAIN LOOP ---
-        function update(timestamp) {
-            if (gameState === "MENU") {
-                drawMenu();
-            } else {
-                if (currentAnimation) {
-                    const elapsed = timestamp - currentAnimation.startTime;
-                    if (currentAnimation.phase === 'IDENTIFY') {
-                        const visualPoly = toLatexStyle(currentAnimation.polyStr);
-                        statusText.innerText = `Analyzing: ${visualPoly} = 0`;
-                        statusText.style.color = COLORS.ANIM_IDENTIFY;
-                        if (elapsed > 1500) {
-                            currentAnimation.phase = 'RESOLVE';
-                            currentAnimation.startTime = timestamp;
-                        }
-                    } else if (currentAnimation.phase === 'RESOLVE') {
-                        const isSuccess = currentAnimation.isSuccess;
-                        statusText.innerText = isSuccess ? "REAL Solutions (Δ ≥ 0). Opponent Removed." : "COMPLEX Solutions (Δ < 0). Backfire!";
-                        statusText.style.color = isSuccess ? COLORS.ANIM_SUCCESS : COLORS.ANIM_FAIL;
-                        if (elapsed > 1500) {
-                            currentAnimation.remove.forEach(pos => { delete board[`${pos.r},${pos.c}`]; });
-                            currentAnimation = null;
-                            if (animationQueue.length === 0) {
-                                currentPlayer = currentPlayer === 1 ? 2 : 1;
-                                resetStatusText();
-                            }
-                        }
-                    }
-                } else {
-                    if (animationQueue.length > 0) {
-                        currentAnimation = animationQueue.shift();
+                const elapsed = timestamp - currentAnimation.startTime;
+                if (currentAnimation.phase === 'IDENTIFY') {
+                    const visualPoly = toLatexStyle(currentAnimation.polyStr);
+                    statusText.innerText = `Analyzing: ${visualPoly} = 0`;
+                    statusText.style.color = COLORS.ANIM_IDENTIFY; 
+                    if (elapsed > 1500) {
+                        currentAnimation.phase = 'RESOLVE';
                         currentAnimation.startTime = timestamp;
-                    } else {
-                        if (gameMode === "PVC" && currentPlayer === 1 && !isAIThinking) {
-                            triggerComputerTurn();
-                        }
                     }
-                }
-                drawBoard();
-            }
-            requestAnimationFrame(update);
-        }
-
-        function resetStatusText() {
-            if (gameMode === "PVC") {
-                if (currentPlayer === 1) {
-                    statusText.innerText = "Computer (Red)'s Turn";
-                    statusText.style.color = COLORS.RED_COIN_LIGHT;
-                } else {
-                    statusText.innerText = "Your Turn (Blue)";
-                    statusText.style.color = COLORS.BLUE_COIN_LIGHT;
-                }
-            } else if (gameMode === "ONLINE") {
-                if (currentPlayer === myPlayerId) {
-                    statusText.innerText = "Your Turn (" + (myPlayerId === 1 ? "Red" : "Blue") + ")";
-                    statusText.style.color = myPlayerId === 1 ? COLORS.RED_COIN_LIGHT : COLORS.BLUE_COIN_LIGHT;
-                } else {
-                    statusText.innerText = "Opponent's Turn";
-                    statusText.style.color = "#A0AEC0";
-                }
-            } else {
-                const pName = currentPlayer === 1 ? "Red" : "Blue";
-                statusText.innerText = `Player ${currentPlayer} (${pName})'s Turn`;
-                statusText.style.color = currentPlayer === 1 ? COLORS.RED_COIN_LIGHT : COLORS.BLUE_COIN_LIGHT;
-            }
-        }
-
-
-        // --- MQTT + WebRTC IMPLEMENTATION ---
-
-        function logStatus(msg, isError = false) {
-            console.log(msg);
-            const el = document.getElementById('statusTitle');
-            if (el) {
-                el.innerText = msg;
-                el.style.color = isError ? '#E53E3E' : '#4299E1';
-            }
-        }
-
-        function initMQTT(roomId, isHost) {
-            currentRoomId = roomId;
-            logStatus("Connecting to Signal Server (MQTT)...");
-
-            const clientId = 'qwar_' + Math.random().toString(16).substr(2, 8);
-            const brokerUrl = 'wss://broker.emqx.io:8084/mqtt';
-
-            mqttClient = mqtt.connect(brokerUrl, {
-                clientId: clientId,
-                clean: true
-            });
-
-            mqttClient.on('connect', () => {
-                logStatus("Signaling Connected. Handshaking...");
-
-                // Host listens on 'tohost', Joiner listens on 'tojoin'
-                const subTopic = isHost ? `qwar/${roomId}/tohost` : `qwar/${roomId}/tojoin`;
-
-                mqttClient.subscribe(subTopic, (err) => {
-                    if (err) {
-                        logStatus("Signaling Subscribe Error", true);
-                    } else {
-                        if (!isHost) {
-                            // Joiner initiates WebRTC
-                            setupWebRTC(false);
-                        } else {
-                            // Host waits for offer
-                            setupWebRTC(true);
-                        }
-                    }
-                });
-            });
-
-            mqttClient.on('message', (topic, message) => {
-                try {
-                    const data = JSON.parse(message.toString());
-                    handleSignalMessage(data);
-                } catch (e) {
-                    console.error("Signal parsing error", e);
-                }
-            });
-
-            mqttClient.on('error', (err) => {
-                logStatus("Signaling Error: " + err.message, true);
-            });
-        }
-
-        function sendSignal(data) {
-            const pubTopic = myPlayerId === 1 ? `qwar/${currentRoomId}/tojoin` : `qwar/${currentRoomId}/tohost`;
-            if (mqttClient) {
-                mqttClient.publish(pubTopic, JSON.stringify(data));
-            }
-        }
-
-        function setupWebRTC(isHost) {
-            logStatus("Initializing WebRTC...");
-            rtcPeer = new RTCPeerConnection(ICE_SERVERS);
-
-            rtcPeer.onicecandidate = (event) => {
-                if (event.candidate) {
-                    sendSignal({ type: 'candidate', candidate: event.candidate });
-                }
-            };
-
-            rtcPeer.oniceconnectionstatechange = () => {
-                console.log("ICE State:", rtcPeer.iceConnectionState);
-                if (rtcPeer.iceConnectionState === 'connected') {
-                    logStatus("P2P Connection Established!");
-                    // Signaling done, we can disconnect MQTT to save resources/conflicts
-                    setTimeout(() => {
-                        if (mqttClient) { mqttClient.end(); mqttClient = null; }
-                    }, 2000);
-                } else if (rtcPeer.iceConnectionState === 'disconnected') {
-                    alert("P2P Connection Lost");
-                    closeOnlineMenu();
-                }
-            };
-
-            if (isHost) {
-                myPlayerId = 1;
-                // Host creates Data Channel
-                dataChannel = rtcPeer.createDataChannel("game");
-                setupDataChannel(dataChannel);
-            } else {
-                myPlayerId = 2;
-                // Joiner waits for Data Channel
-                rtcPeer.ondatachannel = (event) => {
-                    dataChannel = event.channel;
-                    setupDataChannel(dataChannel);
-                };
-
-                // Joiner creates Offer
-                createOffer();
-            }
-        }
-
-        async function createOffer() {
-            try {
-                const offer = await rtcPeer.createOffer();
-                await rtcPeer.setLocalDescription(offer);
-                sendSignal({ type: 'offer', sdp: offer });
-                logStatus("Sent Offer...");
-            } catch (e) {
-                logStatus("Offer Error: " + e, true);
-            }
-        }
-
-        async function handleSignalMessage(data) {
-            if (!rtcPeer) return;
-
-            if (data.type === 'offer') {
-                if (myPlayerId !== 1) return; // Only host receives offer
-                logStatus("Received Offer. Sending Answer...");
-                await rtcPeer.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                const answer = await rtcPeer.createAnswer();
-                await rtcPeer.setLocalDescription(answer);
-                sendSignal({ type: 'answer', sdp: answer });
-
-            } else if (data.type === 'answer') {
-                if (myPlayerId !== 2) return; // Only joiner receives answer
-                logStatus("Received Answer. Connecting...");
-                await rtcPeer.setRemoteDescription(new RTCSessionDescription(data.sdp));
-
-            } else if (data.type === 'candidate') {
-                try {
-                    await rtcPeer.addIceCandidate(new RTCIceCandidate(data.candidate));
-                } catch (e) {
-                    console.error("Error adding candidate", e);
-                }
-            }
-        }
-
-        function setupDataChannel(channel) {
-            channel.onopen = () => {
-                logStatus("Game Ready!");
-                onlineGameActive = true;
-
-                // Give a moment for UI to update
-                setTimeout(() => {
-                    document.getElementById('onlineOverlay').style.display = 'none';
-                    if (myPlayerId === 1) {
-                        startGame("ONLINE");
-                        sendGameData({ type: 'START', player: 2 });
-                    }
-                }, 500);
-            };
-
-            channel.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                handleGameData(data);
-            };
-        }
-
-        function handleGameData(data) {
-            console.log("Game Data:", data);
-            if (data.type === 'START') {
-                startGame("ONLINE");
-                myPlayerId = data.player; // 2
-                document.getElementById('onlineOverlay').style.display = 'none';
-                resetStatusText();
-            } else if (data.type === 'MOVE') {
-                executeMove(data.start, data.end);
-            }
-        }
-
-        function sendGameData(data) {
-            if (dataChannel && dataChannel.readyState === 'open') {
-                dataChannel.send(JSON.stringify(data));
-            }
-        }
-
-        function startHost() {
-            const roomId = Math.random().toString(36).substring(2, 7).toUpperCase();
-            document.getElementById('statusTitle').innerText = "Hosting Game";
-            document.getElementById('hostIdDisplay').style.display = 'block';
-            document.getElementById('myPeerId').innerText = roomId;
-            initMQTT(roomId, true);
-        }
-
-        function joinGame() {
-            const hostId = document.getElementById('joinInput').value.trim().toUpperCase();
-            if (!hostId) { alert("Please enter a Host ID"); return; }
-            initMQTT(hostId, false);
-        }
-
-        function sendMove(start, end) {
-            if (onlineGameActive) {
-                sendGameData({ type: 'MOVE', start: start, end: end });
-            }
-        }
-
-        function executeMove(start, end) {
-            const startKey = `${start.r},${start.c}`;
-            const endKey = `${end.r},${end.c}`;
-            if (!board[startKey]) return;
-            board[endKey] = board[startKey];
-            delete board[startKey];
-
-            const equations = checkForEquations(end.r, end.c, currentPlayer);
-            if (equations.length > 0) {
-                animationQueue.push(...equations);
-            } else {
-                currentPlayer = currentPlayer === 1 ? 2 : 1;
-                resetStatusText();
-            }
-        }
-
-        function openOnlineMenu() {
-            document.getElementById('onlineOverlay').style.display = 'flex';
-            document.getElementById('lobbyParams').style.display = 'flex';
-            document.getElementById('lobbyStatus').style.display = 'none';
-        }
-
-        function closeOnlineMenu() {
-            document.getElementById('onlineOverlay').style.display = 'none';
-            if (mqttClient) { mqttClient.end(); mqttClient = null; }
-            if (rtcPeer) { rtcPeer.close(); rtcPeer = null; }
-            dataChannel = null;
-            myPlayerId = 0;
-            onlineGameActive = false;
-            gameState = "MENU";
-            resetStatusText();
-        }
-
-        // --- INPUT ---
-        canvas.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const x = (e.clientX - rect.left) * scaleX;
-            const y = (e.clientY - rect.top) * scaleY;
-
-            if (gameState === "MENU") {
-                if (x >= btnPVP.x && x <= btnPVP.x + btnPVP.w && y >= btnPVP.y && y <= btnPVP.y + btnPVP.h) {
-                    startGame("PVP");
-                } else if (x >= btnPVC.x && x <= btnPVC.x + btnPVC.w && y >= btnPVC.y && y <= btnPVC.y + btnPVC.h) {
-                    startGame("PVC");
-                } else if (x >= btnOnline.x && x <= btnOnline.x + btnOnline.w && y >= btnOnline.y && y <= btnOnline.y + btnOnline.h) {
-                    openOnlineMenu();
-                }
-                return;
-            }
-
-            if (currentAnimation || animationQueue.length > 0 || isAIThinking) return;
-            if (gameMode === "PVC" && currentPlayer === 1) return;
-            if (gameMode === "ONLINE" && currentPlayer !== myPlayerId) return;
-
-            const c = Math.floor(x / TILE_SIZE);
-            const r = Math.floor(y / TILE_SIZE);
-            const key = `${r},${c}`;
-
-            if (selectedCoin) {
-                const startR = selectedCoin.r; const startC = selectedCoin.c;
-                if (startR === r && startC === c) {
-                    selectedCoin = null; validMoves = []; return;
-                }
-                const isMoveValid = validMoves.some(m => m.r === r && m.c === c);
-                if (isMoveValid) {
-                    if (gameMode === 'ONLINE') {
-                        sendMove({ r: startR, c: startC }, { r, c });
-                        executeMove({ r: startR, c: startC }, { r, c });
-                        selectedCoin = null; validMoves = [];
-                    } else {
-                        board[`${r},${c}`] = board[`${startR},${startC}`];
-                        delete board[`${startR},${startC}`];
-                        selectedCoin = null; validMoves = [];
-                        const equations = checkForEquations(r, c, currentPlayer);
-                        if (equations.length > 0) {
-                            animationQueue.push(...equations);
-                        } else {
+                } else if (currentAnimation.phase === 'RESOLVE') {
+                    const isSuccess = currentAnimation.isSuccess;
+                    statusText.innerText = isSuccess ? "REAL Solutions (Δ ≥ 0). Opponent Removed." : "COMPLEX Solutions (Δ < 0). Backfire!";
+                    statusText.style.color = isSuccess ? COLORS.ANIM_SUCCESS : COLORS.ANIM_FAIL;
+                    if (elapsed > 1500) {
+                        currentAnimation.remove.forEach(pos => { delete board[`${pos.r},${pos.c}`]; });
+                        currentAnimation = null;
+                        if (animationQueue.length === 0) {
                             currentPlayer = currentPlayer === 1 ? 2 : 1;
                             resetStatusText();
                         }
                     }
+                }
+            } else {
+                if (animationQueue.length > 0) {
+                    currentAnimation = animationQueue.shift();
+                    currentAnimation.startTime = timestamp;
                 } else {
-                    if (board[key] && board[key].p === currentPlayer) {
-                        selectedCoin = { r, c }; validMoves = getValidMoves(r, c, currentPlayer);
-                    } else { selectedCoin = null; validMoves = []; }
+                    // Turn Logic
+                    if (gameMode === "PVC" && currentPlayer === 1 && !isAIThinking) {
+                        triggerComputerTurn();
+                    }
+                }
+            }
+            drawBoard();
+        }
+        requestAnimationFrame(update);
+    }
+
+    function resetStatusText() {
+        if (gameMode === "PVC") {
+             if (currentPlayer === 1) {
+                 statusText.innerText = "Computer (Red)'s Turn";
+                 statusText.style.color = COLORS.RED_COIN_LIGHT;
+             } else {
+                 statusText.innerText = "Your Turn (Blue)";
+                 statusText.style.color = COLORS.BLUE_COIN_LIGHT;
+             }
+        } else {
+             // PVP
+             const pName = currentPlayer === 1 ? "Red" : "Blue";
+             statusText.innerText = `Player ${currentPlayer} (${pName})'s Turn`;
+             statusText.style.color = currentPlayer === 1 ? COLORS.RED_COIN_LIGHT : COLORS.BLUE_COIN_LIGHT;
+        }
+    }
+
+    // --- INPUT ---
+    canvas.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width; 
+        const scaleY = canvas.height / rect.height;
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
+
+        // MENU CLICKS
+        if (gameState === "MENU") {
+            if (x >= btnPVP.x && x <= btnPVP.x + btnPVP.w && y >= btnPVP.y && y <= btnPVP.y + btnPVP.h) {
+                startGame("PVP");
+            } else if (x >= btnPVC.x && x <= btnPVC.x + btnPVC.w && y >= btnPVC.y && y <= btnPVC.y + btnPVC.h) {
+                startGame("PVC");
+            }
+            return;
+        }
+
+        // GAMEPLAY CLICKS
+        if (currentAnimation || animationQueue.length > 0 || isAIThinking) return; 
+        
+        // Prevent Human from clicking during Computer's turn in PVC mode
+        if (gameMode === "PVC" && currentPlayer === 1) return;
+
+        const c = Math.floor(x / TILE_SIZE);
+        const r = Math.floor(y / TILE_SIZE);
+        const key = `${r},${c}`;
+
+        if (selectedCoin) {
+            const startR = selectedCoin.r; const startC = selectedCoin.c;
+            if (startR === r && startC === c) {
+                selectedCoin = null; validMoves = []; return;
+            }
+            const isMoveValid = validMoves.some(m => m.r === r && m.c === c);
+            if (isMoveValid) {
+                board[`${r},${c}`] = board[`${startR},${startC}`];
+                delete board[`${startR},${startC}`];
+                selectedCoin = null; validMoves = [];
+                const equations = checkForEquations(r, c, currentPlayer);
+                if (equations.length > 0) {
+                    animationQueue.push(...equations);
+                } else {
+                    currentPlayer = currentPlayer === 1 ? 2 : 1;
+                    resetStatusText();
                 }
             } else {
                 if (board[key] && board[key].p === currentPlayer) {
-                    selectedCoin = { r, c }; validMoves = getValidMoves(r, c, currentPlayer);
-                }
+                    selectedCoin = {r, c}; validMoves = getValidMoves(r, c, currentPlayer);
+                } else { selectedCoin = null; validMoves = []; }
             }
-        });
+        } else {
+            if (board[key] && board[key].p === currentPlayer) {
+                selectedCoin = {r, c}; validMoves = getValidMoves(r, c, currentPlayer);
+            }
+        }
+    });
 
-        requestAnimationFrame(update);
-    </script>
+    requestAnimationFrame(update);
+
+</script>
 </body>
-
 </html>
