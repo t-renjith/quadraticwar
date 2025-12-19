@@ -1,0 +1,33 @@
+/* --- Professional Dark Theme CSS --- */
+body {
+    background-color: #F8FAFC;
+    color: #0F172A;
+    font-family: 'Lato', sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 10px;
+    min-height: 100vh;
+    overflow: hidden;
+}
+
+h1 {
+    margin: 10px 0;
+    font-weight: normal;
+    letter-spacing: 1px;
+    font-style: italic;
+    font-size: 24px;
+}
+
+canvas {
+    background-color: #2D3748;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+    border-radius: 4px;
+    width: 100%;
+    max-width: 560px;
+    height: auto;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+}

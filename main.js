@@ -1,0 +1,511 @@
+// --- STATE ---
+let gameState = "MENU"; // "MENU" or "PLAYING"
+let previousState = "MENU";
+let gameMode = null;    // "PVP" or "PVC" (Player vs Computer)
+
+let board = {};
+let selectedCoin = null;
+let currentPlayer = 2; // Blue Starts
+let validMoves = [];
+let animationQueue = [];
+let currentAnimation = null;
+let isAIThinking = false;
+let mouse = { x: 0, y: 0 };
+let currentStatus = { text: "", color: COLORS.WHITE };
+let gameResult = { status: "", reason: "" }; // Store win/loss info
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// --- BUTTONS FOR MENU ---
+const btnPVP = { x: 130, y: 200, w: 300, h: 60, text: "2 Players" };
+const btnPVC = { x: 130, y: 290, w: 300, h: 60, text: "Vs Computer" };
+const btnInstr = { x: 130, y: 380, w: 300, h: 60, text: "Instructions" };
+const btnBack = { x: 20, y: 20, w: 100, h: 40, text: "Back" };
+
+// Game Buttons (Below Board)
+const btnGameBack = { x: 20, y: 640, w: 140, h: 45, text: "Exit to Menu" };
+const btnGameInstr = { x: 400, y: 640, w: 140, h: 45, text: "Instructions" };
+
+// Game Over Button
+const btnGameOverMenu = { x: 180, y: 400, w: 200, h: 50, text: "Main Menu" };
+
+// --- INITIALIZATION ---
+function initBoard() {
+    board = {};
+    for (let c = 0; c < BOARD_COLS; c++) {
+        board[`0,${c}`] = { p: 1, term: getTermAtPos(1, 1, c) };
+        board[`1,${c}`] = { p: 1, term: getTermAtPos(1, 2, c) };
+        board[`2,${c}`] = { p: 1, term: getTermAtPos(1, 3, c) };
+    }
+    for (let c = 0; c < BOARD_COLS; c++) {
+        board[`6,${c}`] = { p: 2, term: getTermAtPos(2, 3, c) };
+        board[`7,${c}`] = { p: 2, term: getTermAtPos(2, 2, c) };
+        board[`8,${c}`] = { p: 2, term: getTermAtPos(2, 1, c) };
+    }
+}
+
+function startGame(mode) {
+    gameMode = mode;
+    gameState = "PLAYING";
+    previousState = "MENU";
+    currentPlayer = 2; // Blue Always Starts
+    selectedCoin = null;
+    validMoves = [];
+    animationQueue = [];
+    currentAnimation = null;
+    initBoard();
+    resetStatusText();
+}
+
+function triggerComputerTurn() {
+    if (isAIThinking || gameState !== "PLAYING") return;
+    isAIThinking = true;
+    currentStatus.text = "Computer is thinking...";
+    currentStatus.color = COLORS.RED_COIN_LIGHT;
+
+    setTimeout(() => {
+        makeBestMove();
+        isAIThinking = false;
+    }, 800);
+}
+
+// --- DRAWING HELPERS ---
+function drawSharpRect(x, y, w, h) {
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.closePath();
+}
+
+function isHovered(btn) {
+    return mouse.x >= btn.x && mouse.x <= btn.x + btn.w &&
+        mouse.y >= btn.y && mouse.y <= btn.y + btn.h;
+}
+
+// --- DRAWING ---
+function drawInstructions() {
+    ctx.fillStyle = COLORS.BG_DARK;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Back Button
+    const backHover = isHovered(btnBack);
+    ctx.fillStyle = backHover ? COLORS.MENU_BTN_HOVER : COLORS.MENU_BTN;
+    drawSharpRect(btnBack.x, btnBack.y, btnBack.w, btnBack.h);
+    ctx.fill();
+
+    ctx.strokeStyle = backHover ? COLORS.MENU_ACCENT : COLORS.BOARD_LIGHT;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = COLORS.MENU_TEXT;
+    ctx.font = "400 14px 'Lato', sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(btnBack.text.toUpperCase(), btnBack.x + btnBack.w / 2, btnBack.y + btnBack.h / 2);
+
+    // Title
+    ctx.font = "700 32px 'Cinzel', serif";
+    ctx.fillStyle = COLORS.MENU_ACCENT;
+    ctx.fillText("INSTRUCTIONS", canvas.width / 2, 60);
+
+    // Decorative Line under title
+    ctx.beginPath();
+    ctx.moveTo(canvas.width / 2 - 100, 75);
+    ctx.lineTo(canvas.width / 2 + 100, 75);
+    ctx.strokeStyle = COLORS.BOARD_LIGHT;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Content
+    const lines = [
+        "OBJECTIVE",
+        "Form quadratic equations (ax² + bx + c = 0)",
+        "using adjacent pieces. If the equation has REAL",
+        "solutions (Δ ≥ 0), the opponent's pieces are removed.",
+        "",
+        "MOVEMENT",
+        "Pieces move based on their algebraic term.",
+        "x² (Quadratic): Up to 3 steps in any direction.",
+        "x (Linear): Up to 2 steps (Horizontal/Vertical).",
+        "Constant: 1 step Forward.",
+        "",
+        "WINNING",
+        "Eliminate all opponent pieces, otherwise it is a draw."
+    ];
+
+    let y = 120;
+    lines.forEach(line => {
+        if (line === "OBJECTIVE" || line === "MOVEMENT" || line === "WINNING") {
+            ctx.fillStyle = COLORS.MENU_ACCENT;
+            ctx.font = "700 16px 'Cinzel', serif";
+            y += 10;
+        } else {
+            ctx.fillStyle = "#475569"; // Slate 600 (Darker Grey for subtitle)
+            ctx.font = "300 15px 'Lato', sans-serif";
+        }
+        ctx.textAlign = "center";
+        ctx.fillText(line, canvas.width / 2, y);
+        y += 28;
+    });
+}
+
+function drawGameOver() {
+    // Semi-transparent overlay
+    ctx.fillStyle = "rgba(15, 23, 42, 0.85)"; // Slate 900 fade
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    // Title
+    ctx.font = "700 48px 'Cinzel', serif";
+
+    let title = "";
+    let color = COLORS.WHITE;
+
+    if (gameResult.status === "WIN_RED") {
+        title = "RED WINS!";
+        color = COLORS.RED_COIN_LIGHT;
+    } else if (gameResult.status === "WIN_BLUE") {
+        title = "BLUE WINS!";
+        color = COLORS.BLUE_COIN_LIGHT;
+    } else {
+        title = "DRAW";
+        color = COLORS.HIGHLIGHT_SELECT; // Amber
+    }
+
+    ctx.fillStyle = color;
+    ctx.fillText(title, canvas.width / 2, 250);
+
+    // Reason
+    ctx.font = "400 18px 'Lato', sans-serif";
+    ctx.fillStyle = COLORS.WHITE;
+    ctx.fillText(gameResult.reason, canvas.width / 2, 310);
+
+    // Menu Button
+    const hovered = isHovered(btnGameOverMenu);
+    ctx.fillStyle = hovered ? COLORS.MENU_BTN_HOVER : COLORS.MENU_BTN;
+    drawSharpRect(btnGameOverMenu.x, btnGameOverMenu.y, btnGameOverMenu.w, btnGameOverMenu.h);
+    ctx.fill();
+
+    ctx.strokeStyle = hovered ? COLORS.MENU_ACCENT : COLORS.BOARD_LIGHT;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = hovered ? COLORS.WHITE : COLORS.MENU_TEXT;
+    ctx.font = "400 16px 'Lato', sans-serif"; // Using Lato for button text
+    ctx.fillText(btnGameOverMenu.text.toUpperCase(), btnGameOverMenu.x + btnGameOverMenu.w / 2, btnGameOverMenu.y + btnGameOverMenu.h / 2);
+}
+
+function drawMenu() {
+    ctx.fillStyle = COLORS.BG_DARK;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Title Decoration
+    ctx.font = "700 52px 'Cinzel', serif";
+    ctx.fillStyle = COLORS.MENU_ACCENT;
+    ctx.fillText("QUADRATIC", canvas.width / 2, 100);
+    ctx.font = "400 36px 'Cinzel', serif";
+    ctx.fillStyle = COLORS.MENU_TEXT;
+    ctx.fillText("WAR", canvas.width / 2, 145);
+
+    ctx.font = "300 14px 'Lato', sans-serif";
+    ctx.fillStyle = "#475569"; // Slate 600
+    ctx.fillText("THE ALGEBRA STRATEGY GAME", canvas.width / 2, 180);
+
+    // Draw Buttons
+    [btnPVP, btnPVC, btnInstr].forEach(btn => {
+        const hovered = isHovered(btn);
+
+        ctx.fillStyle = hovered ? COLORS.MENU_BTN_HOVER : COLORS.MENU_BTN;
+        drawSharpRect(btn.x, btn.y, btn.w, btn.h);
+        ctx.fill();
+
+        ctx.strokeStyle = hovered ? COLORS.MENU_ACCENT : COLORS.BOARD_LIGHT;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = hovered ? COLORS.WHITE : COLORS.MENU_TEXT;
+        ctx.font = "400 16px 'Cinzel', serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(btn.text.toUpperCase(), btn.x + btn.w / 2, btn.y + btn.h / 2);
+    });
+}
+
+function drawBoard() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 1. Draw Tiles
+    for (let r = 0; r < BOARD_ROWS; r++) {
+        for (let c = 0; c < BOARD_COLS; c++) {
+            const x = c * TILE_SIZE;
+            const y = r * TILE_SIZE;
+            ctx.fillStyle = (r + c) % 2 === 0 ? COLORS.BOARD_LIGHT : COLORS.BOARD_DARK;
+            ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+
+            // Show valid moves if it's human's turn
+            const isHumanTurn = (gameMode === 'PVP') || (gameMode === 'PVC' && currentPlayer === 2);
+
+            if (!currentAnimation && isHumanTurn) {
+                const isValid = validMoves.some(m => m.r === r && m.c === c);
+                if (isValid) {
+                    ctx.strokeStyle = COLORS.HIGHLIGHT_VALID;
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                }
+            }
+        }
+    }
+
+    // 2. Animations
+    if (currentAnimation) {
+        const anim = currentAnimation;
+        let color = (anim.phase === 'IDENTIFY') ? COLORS.ANIM_IDENTIFY : (anim.isSuccess ? COLORS.ANIM_SUCCESS : COLORS.ANIM_FAIL);
+        ctx.globalAlpha = 0.5; ctx.fillStyle = color;
+        anim.coords.forEach(pos => ctx.fillRect(pos.c * TILE_SIZE, pos.r * TILE_SIZE, TILE_SIZE, TILE_SIZE));
+        ctx.globalAlpha = 1.0; ctx.strokeStyle = color; ctx.lineWidth = 4;
+        anim.coords.forEach(pos => ctx.strokeRect(pos.c * TILE_SIZE + 2, pos.r * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4));
+    }
+
+    // 3. Coins
+    for (let key in board) {
+        const piece = board[key];
+        const [r, c] = key.split(',').map(Number);
+        const x = c * TILE_SIZE + TILE_SIZE / 2;
+        const y = r * TILE_SIZE + TILE_SIZE / 2;
+        const radius = TILE_SIZE / 2 - 6;
+
+        if (selectedCoin && selectedCoin.r === r && selectedCoin.c === c) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius + 6, 0, Math.PI * 2);
+            ctx.fillStyle = COLORS.HIGHLIGHT_SELECT;
+            ctx.fill();
+        }
+
+        const gradient = ctx.createRadialGradient(x, y, radius * 0.3, x, y, radius);
+        if (piece.p === 1) {
+            gradient.addColorStop(0, COLORS.RED_COIN_LIGHT);
+            gradient.addColorStop(1, COLORS.RED_COIN_BASE);
+        } else {
+            gradient.addColorStop(0, COLORS.BLUE_COIN_LIGHT);
+            gradient.addColorStop(1, COLORS.BLUE_COIN_BASE);
+        }
+
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.shadowColor = 'rgba(0,0,0,0.4)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+        ctx.fill();
+        ctx.shadowColor = 'transparent';
+
+        ctx.fillStyle = "#FFFFFF"; // Keep coin text white as coins are distinct colors
+        ctx.font = "700 20px 'Lato', sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(toLatexStyle(piece.term), x, y);
+    }
+
+    // 4. In-Game Buttons
+    [btnGameBack, btnGameInstr].forEach(btn => {
+        const hovered = isHovered(btn);
+        ctx.fillStyle = hovered ? COLORS.MENU_BTN_HOVER : COLORS.MENU_BTN;
+        drawSharpRect(btn.x, btn.y, btn.w, btn.h);
+        ctx.fill();
+
+        ctx.strokeStyle = hovered ? COLORS.MENU_ACCENT : COLORS.BOARD_LIGHT;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = hovered ? COLORS.WHITE : COLORS.MENU_TEXT;
+        ctx.font = "400 14px 'Lato', sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(btn.text.toUpperCase(), btn.x + btn.w / 2, btn.y + btn.h / 2);
+    });
+
+    // 5. Status Text (Between Buttons)
+    // 280 is center of 560
+    ctx.fillStyle = currentStatus.color;
+    // Adapt font size
+    const fontSize = currentStatus.text.length > 30 ? 13 : 16;
+    ctx.font = `600 ${fontSize}px 'Lato', sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(currentStatus.text, 280, 663);
+}
+
+// --- MAIN LOOP ---
+function update(timestamp) {
+    if (gameState === "MENU") {
+        drawMenu();
+    } else if (gameState === "INSTRUCTIONS") {
+        drawInstructions();
+    } else if (gameState === "GAME_OVER") {
+        drawBoard(); // Show board in background
+        drawGameOver();
+    } else {
+        // GAMEPLAY STATE
+        if (currentAnimation) {
+            const elapsed = timestamp - currentAnimation.startTime;
+            if (currentAnimation.phase === 'IDENTIFY') {
+                const visualPoly = toLatexStyle(currentAnimation.polyStr);
+                currentStatus.text = `Analyzing: ${visualPoly} = 0`;
+                currentStatus.color = COLORS.ANIM_IDENTIFY;
+                if (elapsed > 1500) {
+                    currentAnimation.phase = 'RESOLVE';
+                    currentAnimation.startTime = timestamp;
+                }
+            } else if (currentAnimation.phase === 'RESOLVE') {
+                const isSuccess = currentAnimation.isSuccess;
+                currentStatus.text = isSuccess ? "REAL Solutions (Δ ≥ 0). Opponent Removed." : "COMPLEX Solutions (Δ < 0). Backfire!";
+                currentStatus.color = isSuccess ? COLORS.ANIM_SUCCESS : COLORS.ANIM_FAIL;
+                if (elapsed > 1500) {
+                    currentAnimation.remove.forEach(pos => { delete board[`${pos.r},${pos.c}`]; });
+                    currentAnimation = null;
+                    if (animationQueue.length === 0) {
+                        const endCheck = checkGameEnd(board);
+                        if (endCheck.status !== "PLAYING") {
+                            gameState = "GAME_OVER";
+                            gameResult = endCheck;
+                        } else {
+                            currentPlayer = currentPlayer === 1 ? 2 : 1;
+                            resetStatusText();
+                        }
+                    }
+                }
+            }
+        } else {
+            if (animationQueue.length > 0) {
+                currentAnimation = animationQueue.shift();
+                currentAnimation.startTime = timestamp;
+            } else {
+                // Turn Logic
+                if (gameMode === "PVC" && currentPlayer === 1 && !isAIThinking) {
+                    triggerComputerTurn();
+                }
+            }
+        }
+        drawBoard();
+    }
+    requestAnimationFrame(update);
+}
+
+function resetStatusText() {
+    if (gameMode === "PVC") {
+        if (currentPlayer === 1) {
+            currentStatus.text = "Computer (Red)'s Turn";
+            currentStatus.color = COLORS.RED_COIN_LIGHT;
+        } else {
+            currentStatus.text = "Your Turn (Blue)";
+            currentStatus.color = COLORS.ANIM_IDENTIFY;
+        }
+    } else {
+        // PVP
+        const pName = currentPlayer === 1 ? "Red" : "Blue";
+        currentStatus.text = `${pName}'s Turn`;
+        currentStatus.color = currentPlayer === 1 ? COLORS.RED_COIN_LIGHT : COLORS.ANIM_IDENTIFY;
+    }
+}
+
+// --- INPUT ---
+canvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+
+    // MENU CLICKS
+    if (gameState === "MENU") {
+        if (x >= btnPVP.x && x <= btnPVP.x + btnPVP.w && y >= btnPVP.y && y <= btnPVP.y + btnPVP.h) {
+            startGame("PVP");
+        } else if (x >= btnPVC.x && x <= btnPVC.x + btnPVC.w && y >= btnPVC.y && y <= btnPVC.y + btnPVC.h) {
+            startGame("PVC");
+        } else if (x >= btnInstr.x && x <= btnInstr.x + btnInstr.w && y >= btnInstr.y && y <= btnInstr.y + btnInstr.h) {
+            gameState = "INSTRUCTIONS";
+        }
+        return;
+    }
+
+    if (gameState === "INSTRUCTIONS") {
+        if (x >= btnBack.x && x <= btnBack.x + btnBack.w && y >= btnBack.y && y <= btnBack.y + btnBack.h) {
+            gameState = previousState; // Resume game or go back to menu
+        }
+        return;
+    }
+
+    if (gameState === "GAME_OVER") {
+        if (x >= btnGameOverMenu.x && x <= btnGameOverMenu.x + btnGameOverMenu.w && y >= btnGameOverMenu.y && y <= btnGameOverMenu.y + btnGameOverMenu.h) {
+            gameState = "MENU";
+            gameMode = null;
+        }
+        return;
+    }
+
+    // GAMEPLAY CLICKS
+    // Check Navigation Buttons first
+    if (x >= btnGameBack.x && x <= btnGameBack.x + btnGameBack.w && y >= btnGameBack.y && y <= btnGameBack.y + btnGameBack.h) {
+        // Exit to Menu
+        gameState = "MENU";
+        gameMode = null;
+        currentStatus.text = ""; // Clear status logic, not needed in menu
+        return;
+    }
+    if (x >= btnGameInstr.x && x <= btnGameInstr.x + btnGameInstr.w && y >= btnGameInstr.y && y <= btnGameInstr.y + btnGameInstr.h) {
+        previousState = "PLAYING";
+        gameState = "INSTRUCTIONS";
+        return;
+    }
+
+    if (currentAnimation || animationQueue.length > 0 || isAIThinking) return;
+
+    // Prevent Human from clicking during Computer's turn in PVC mode
+    if (gameMode === "PVC" && currentPlayer === 1) return;
+
+    const c = Math.floor(x / TILE_SIZE);
+    const r = Math.floor(y / TILE_SIZE);
+    const key = `${r},${c}`;
+
+    if (selectedCoin) {
+        const startR = selectedCoin.r; const startC = selectedCoin.c;
+        if (startR === r && startC === c) {
+            selectedCoin = null; validMoves = []; return;
+        }
+        const isMoveValid = validMoves.some(m => m.r === r && m.c === c);
+        if (isMoveValid) {
+            board[`${r},${c}`] = board[`${startR},${startC}`];
+            delete board[`${startR},${startC}`];
+            selectedCoin = null; validMoves = [];
+            const equations = checkForEquations(r, c, currentPlayer);
+            if (equations.length > 0) {
+                animationQueue.push(...equations);
+            } else {
+                currentPlayer = currentPlayer === 1 ? 2 : 1;
+                resetStatusText();
+            }
+        } else {
+            if (board[key] && board[key].p === currentPlayer) {
+                selectedCoin = { r, c }; validMoves = getValidMoves(r, c, currentPlayer);
+            } else { selectedCoin = null; validMoves = []; }
+        }
+    } else {
+        if (board[key] && board[key].p === currentPlayer) {
+            selectedCoin = { r, c }; validMoves = getValidMoves(r, c, currentPlayer);
+        }
+    }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    mouse.x = (e.clientX - rect.left) * scaleX;
+    mouse.y = (e.clientY - rect.top) * scaleY;
+});
+
+requestAnimationFrame(update);
