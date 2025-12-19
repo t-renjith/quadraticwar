@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Quadratic War</title>
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
     <style>
         /* --- Professional Dark Theme CSS --- */
         body {
@@ -167,7 +167,16 @@
     </div>
     <div class="status" id="statusText">Select a Game Mode</div>
 
-    <script>
+    <script type="module">
+        import { joinRoom } from 'https://cdn.jsdelivr.net/npm/trystero@0.19.0/dist/trystero-torrent.min.js';
+
+        // --- EXPORT GLOBALS (Required for HTML onclick) ---
+        window.startGame = startGame;
+        window.startHost = startHost;
+        window.joinGame = joinGame;
+        window.closeOnlineMenu = closeOnlineMenu;
+        window.openOnlineMenu = openOnlineMenu;
+
         // --- CONFIGURATION ---
         const BOARD_ROWS = 9;
         const BOARD_COLS = 8;
@@ -210,9 +219,9 @@
         let currentAnimation = null;
         let isAIThinking = false;
 
-        // --- PEERJS / ONLINE STATE ---
-        let peer = null;
-        let conn = null;
+        // --- TRYSTERO / ONLINE STATE ---
+        let room = null;
+        let sendGameData = null;
         let myPlayerId = 0; // 1 = Red(Host), 2 = Blue(Guest)
         let onlineGameActive = false;
 
@@ -677,9 +686,7 @@
         }
 
 
-        // --- PEERJS IMPLEMENTATION ---
-        let connectionTimeout = null;
-
+        // --- TRYSTERO IMPLEMENTATION ---
         function logStatus(msg, isError = false) {
             console.log(msg);
             const el = document.getElementById('statusTitle');
@@ -689,150 +696,90 @@
             }
         }
 
-        function initPeer(callback) {
+        function initTrystero(roomId, isHost) {
             document.getElementById('lobbyParams').style.display = 'none';
             document.getElementById('lobbyStatus').style.display = 'block';
-            logStatus("Initializing Peer...");
+            logStatus("Connecting to global room...");
 
-            // Explicit STUN server config for better connectivity
-            const peerConfig = {
-                debug: 2,
-                config: {
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' },
-                        { urls: 'stun:stun2.l.google.com:19302' }
-                    ]
+            const appId = 'quadratic-war-p2p-v1';
+            room = joinRoom({ appId: appId }, roomId);
+
+            // Create actions
+            const [sendData, getData] = room.makeAction('game');
+            sendGameData = sendData;
+
+            getData((data, peerId) => {
+                handleData(data);
+            });
+
+            room.onPeerJoin(peerId => {
+                console.log("Peer Joined:", peerId);
+                logStatus("Peer Found! Connecting...");
+
+                // If I am Host (Player 1), I claim it and tell the other person they are P2
+                if (isHost) {
+                    myPlayerId = 1;
+                    // Wait a bit to ensure they are listening
+                    setTimeout(() => {
+                        sendGameData({ type: 'START', player: 2 });
+                        logStatus("Starting Game as Host (Red)");
+                        startOnlineGame();
+                    }, 1000);
                 }
-            };
-
-            peer = new Peer(null, peerConfig);
-
-            peer.on('open', (id) => {
-                console.log("My Peer ID is: " + id);
-                if (callback) callback(id);
             });
 
-            peer.on('error', (err) => {
-                console.error(err);
-                let msg = "Error: " + err.type;
-                if (err.type === 'peer-unavailable') msg = "Host ID not found. Check the ID.";
-                if (err.type === 'network') msg = "Network Error. Check internet.";
-                if (err.type === 'browser-incompatible') msg = "Browser doesn't support WebRTC.";
-
-                logStatus(msg, true);
-                alert(msg);
-
-                if (connectionTimeout) clearTimeout(connectionTimeout);
-                setTimeout(() => {
-                    closeOnlineMenu();
-                }, 3000);
-            });
-
-            peer.on('disconnected', () => {
-                logStatus("Disconnected from PeerServer. Reconnecting...");
-                peer.reconnect();
+            room.onPeerLeave(peerId => {
+                alert("Opponent disconnected.");
+                location.reload();
             });
         }
 
         function startHost() {
-            initPeer((id) => {
-                logStatus("Hosting Game. Waiting for opponent...");
-                document.getElementById('hostIdDisplay').style.display = 'block';
-                document.getElementById('myPeerId').innerText = id;
+            // Generate a simple 5-char ID
+            const roomId = Math.random().toString(36).substring(2, 7).toUpperCase();
 
-                peer.on('connection', (c) => {
-                    conn = c;
-                    logStatus("Opponent Connecting...");
-                    setupConnection();
-                });
-            });
+            document.getElementById('statusTitle').innerText = "Hosting Game";
+            document.getElementById('hostIdDisplay').style.display = 'block';
+            document.getElementById('myPeerId').innerText = roomId;
+
+            initTrystero(roomId, true);
         }
 
         function joinGame() {
-            const hostId = document.getElementById('joinInput').value.trim();
+            const hostId = document.getElementById('joinInput').value.trim().toUpperCase();
             if (!hostId) { alert("Please enter a Host ID"); return; }
 
-            initPeer((id) => {
-                logStatus("Connecting to Host...");
-
-                conn = peer.connect(hostId);
-
-                conn.on('open', () => {
-                    logStatus("Connected to Host!");
-                    setupConnection();
-                });
-
-                // Safety timeout if connection hangs
-                if (connectionTimeout) clearTimeout(connectionTimeout);
-                connectionTimeout = setTimeout(() => {
-                    // Only warn if we are still trying to join (hostIdDisplay is hidden)
-                    // and connection is not open
-                    if (!onlineGameActive && conn && !conn.open && document.getElementById('hostIdDisplay').style.display === 'none') {
-                        logStatus("Connection timed out. Please check ID and try again.", true);
-                        alert("Connection timed out. Please check the Host ID.");
-                        closeOnlineMenu();
-                    }
-                }, 8000); // 8 seconds
-            });
+            logStatus("Joining Room...");
+            initTrystero(hostId, false);
         }
 
-        function setupConnection() {
-            if (connectionTimeout) clearTimeout(connectionTimeout);
-            if (onlineGameActive) return;
-
-            conn.on('data', (data) => {
-                console.log("Received data:", data);
-                handleData(data);
-            });
-
-            conn.on('open', () => {
-                if (myPlayerId === 1) { // Host
-                    conn.send({ type: 'START', player: 2 });
-                }
-            });
-
-            if (conn.open && myPlayerId === 1) {
-                conn.send({ type: 'START', player: 2 });
-            }
-
-            conn.on('close', () => {
-                alert("Opponent disconnected.");
-                location.reload();
-            });
-
-            conn.on('error', (err) => {
-                logStatus("Connection Error: " + err, true);
-            });
+        function startOnlineGame() {
+            startGame("ONLINE");
+            onlineGameActive = true;
+            document.getElementById('onlineOverlay').style.display = 'none';
+            resetStatusText();
         }
 
         function handleData(data) {
+            console.log("Received:", data);
             if (data.type === 'START') {
-                startGame("ONLINE");
-                myPlayerId = data.player; // Should be 2
-                onlineGameActive = true;
-                document.getElementById('onlineOverlay').style.display = 'none';
-                resetStatusText();
+                myPlayerId = data.player; // 2
+                startOnlineGame();
             } else if (data.type === 'MOVE') {
                 executeMove(data.start, data.end);
             }
         }
 
         function sendMove(start, end) {
-            if (conn && conn.open) {
-                conn.send({ type: 'MOVE', start: start, end: end });
-            } else {
-                console.error("Connection lost, cannot send move");
-                alert("Connection lost!");
+            if (sendGameData) {
+                sendGameData({ type: 'MOVE', start: start, end: end });
             }
         }
 
         function executeMove(start, end) {
-            // Execute move received from network or local
             const startKey = `${start.r},${start.c}`;
             const endKey = `${end.r},${end.c}`;
 
-            // Basic validation just in case
             if (!board[startKey]) return;
 
             board[endKey] = board[startKey];
@@ -848,20 +795,17 @@
         }
 
         function openOnlineMenu() {
-            document.getElementById('onlineOverlay').style.display = 'flex';
             document.getElementById('lobbyParams').style.display = 'flex';
             document.getElementById('lobbyStatus').style.display = 'none';
         }
 
         function closeOnlineMenu() {
-            if (connectionTimeout) clearTimeout(connectionTimeout);
             document.getElementById('onlineOverlay').style.display = 'none';
-            // Reset PeerJS connection if any
-            if (peer) {
-                peer.destroy();
-                peer = null;
+            if (room) {
+                room.leave();
+                room = null;
             }
-            conn = null;
+            sendGameData = null;
             myPlayerId = 0;
             onlineGameActive = false;
             gameState = "MENU";
@@ -942,7 +886,6 @@
         });
 
         requestAnimationFrame(update);
-
     </script>
 </body>
 
