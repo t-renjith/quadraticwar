@@ -678,37 +678,62 @@
 
 
         // --- PEERJS IMPLEMENTATION ---
+        function logStatus(msg, isError = false) {
+            console.log(msg);
+            const el = document.getElementById('statusTitle');
+            if (el) {
+                el.innerText = msg;
+                el.style.color = isError ? '#E53E3E' : '#4299E1';
+            }
+        }
+
         function initPeer(callback) {
             document.getElementById('lobbyParams').style.display = 'none';
             document.getElementById('lobbyStatus').style.display = 'block';
+            logStatus("Initializing Peer...");
 
-            peer = new Peer();
+            // Create Peer with default config (Google STUN servers included)
+            peer = new Peer({
+                debug: 2
+            });
+
             peer.on('open', (id) => {
                 console.log("My Peer ID is: " + id);
                 if (callback) callback(id);
             });
+
             peer.on('error', (err) => {
                 console.error(err);
-                alert("Connection Error: " + err.type);
-                closeOnlineMenu();
+                let msg = "Error: " + err.type;
+                if (err.type === 'peer-unavailable') msg = "Host ID not found. Check the ID.";
+                if (err.type === 'network') msg = "Network Error. Check internet.";
+                if (err.type === 'browser-incompatible') msg = "Browser doesn't support WebRTC.";
+
+                logStatus(msg, true);
+                alert(msg); // Ensure user sees it if they changed tabs
+
+                // Allow retry after short delay
+                setTimeout(() => {
+                    closeOnlineMenu();
+                }, 3000);
+            });
+
+            peer.on('disconnected', () => {
+                logStatus("Disconnected from PeerServer. Reconnecting...");
+                peer.reconnect();
             });
         }
 
         function startHost() {
             initPeer((id) => {
-                document.getElementById('statusTitle').innerText = "Hosting Game";
+                logStatus("Hosting Game. Waiting for opponent...");
                 document.getElementById('hostIdDisplay').style.display = 'block';
                 document.getElementById('myPeerId').innerText = id;
 
                 peer.on('connection', (c) => {
                     conn = c;
+                    logStatus("Opponent Connecting...");
                     setupConnection();
-                    alert("Opponent Connected! Starting Game...");
-                    startGame("ONLINE");
-                    myPlayerId = 1; // Host is Red
-                    onlineGameActive = true;
-                    conn.send({ type: 'START', player: 2 }); // Tell guest they are Blue
-                    document.getElementById('onlineOverlay').style.display = 'none';
                 });
             });
         }
@@ -717,14 +742,26 @@
             const hostId = document.getElementById('joinInput').value.trim();
             if (!hostId) { alert("Please enter a Host ID"); return; }
 
-            document.getElementById('statusTitle').innerText = "Connecting to Host...";
             initPeer((id) => {
-                conn = peer.connect(hostId);
+                logStatus("Connecting to Host...");
+                conn = peer.connect(hostId, {
+                    reliable: true
+                });
+
                 conn.on('open', () => {
+                    logStatus("Connected to Host!");
                     setupConnection();
                 });
-                // Backup if 'open' doesn't fire immediately but data comes
-                setTimeout(() => { if (!onlineGameActive && conn) setupConnection(); }, 1000);
+
+                // Note: If connection fails, peer.on('error') with 'peer-unavailable' will trigger.
+                // We explicitly wait for 'open'.
+
+                // Safety timeout if connection hangs
+                setTimeout(() => {
+                    if (!onlineGameActive && conn && !conn.open) {
+                        logStatus("Connection timed out. Retrying...", true);
+                    }
+                }, 5000);
             });
         }
 
@@ -736,9 +773,26 @@
                 handleData(data);
             });
 
+            conn.on('open', () => {
+                // Double check open state
+                if (myPlayerId === 1) { // Host
+                    // Host sends the START command once connection is fully open
+                    conn.send({ type: 'START', player: 2 });
+                }
+            });
+
+            // If I am the guest (Initiator of connection), I wait for 'START' data
+            if (conn.open && myPlayerId === 1) {
+                conn.send({ type: 'START', player: 2 });
+            }
+
             conn.on('close', () => {
                 alert("Opponent disconnected.");
                 location.reload();
+            });
+
+            conn.on('error', (err) => {
+                logStatus("Connection Error: " + err, true);
             });
         }
 
@@ -757,6 +811,9 @@
         function sendMove(start, end) {
             if (conn && conn.open) {
                 conn.send({ type: 'MOVE', start: start, end: end });
+            } else {
+                console.error("Connection lost, cannot send move");
+                alert("Connection lost!");
             }
         }
 
