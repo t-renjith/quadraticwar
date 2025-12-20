@@ -1,7 +1,13 @@
 // --- STATE ---
-let gameState = "MENU"; // "MENU" or "PLAYING"
+let gameState = "MENU"; // "MENU", "PLAYING", "HOSTING", "JOINING"
 let previousState = "MENU";
-let gameMode = null;    // "PVP" or "PVC" (Player vs Computer)
+let gameMode = null;    // "PVP", "PVC", "ONLINE"
+let network = null;     // NetworkManager instance
+let isHost = false;     // Am I the host?
+let onlineId = "";      // My ID or Host ID
+let isOnlineTurn = false; // Is it my turn in online mode?
+let joinCodeInput = "";   // Buffer for typing host code
+let joinStatusMsg = "";   // Status message for join screen
 
 let board = {};
 let selectedCoin = null;
@@ -18,10 +24,17 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
 // --- BUTTONS FOR MENU ---
-const btnPVP = { x: 130, y: 200, w: 300, h: 60, text: "2 Players" };
-const btnPVC = { x: 130, y: 290, w: 300, h: 60, text: "Vs Computer" };
-const btnInstr = { x: 130, y: 380, w: 300, h: 60, text: "Instructions" };
+const btnPVP = { x: 130, y: 180, w: 300, h: 50, text: "2 Players (Local)" };
+const btnPVC = { x: 130, y: 250, w: 300, h: 50, text: "Vs Computer" };
+const btnOnline = { x: 130, y: 320, w: 300, h: 50, text: "Online PvP" };
+const btnInstr = { x: 130, y: 390, w: 300, h: 50, text: "Instructions" };
 const btnBack = { x: 20, y: 20, w: 100, h: 40, text: "Back" };
+
+// Online Menu Buttons
+const btnHost = { x: 130, y: 250, w: 300, h: 60, text: "Host Game" };
+const btnJoin = { x: 130, y: 340, w: 300, h: 60, text: "Join Game" };
+// btnBack already defined above
+
 
 // Game Buttons (Below Board)
 const btnGameBack = { x: 20, y: 640, w: 140, h: 45, text: "Exit to Menu" };
@@ -45,11 +58,117 @@ function initBoard() {
     }
 }
 
+// --- ONLINE LOGIC ---
+function initNetwork() {
+    network = new NetworkManager();
+
+    network.onData((data) => {
+        if (data.type === 'MOVE') {
+            applyOpponentMove(data.move);
+        } else if (data.type === 'START') {
+            // Joiner receives START from Host
+            // Host is ALWAYS Red (1), Joiner is ALWAYS Blue (2)
+            // But wait, traditionally Host starts? 
+            // Let's stick to standard: Red starts.
+            // If Host is Red, they move first.
+            startGame("ONLINE");
+            myPlayerColor = 2; // Joiner is Blue
+            isOnlineTurn = false; // Red (Host) starts
+            resetStatusText();
+        }
+    });
+
+    network.onClose(() => {
+        alert("Opponent disconnected!");
+        gameState = "MENU";
+        gameMode = null;
+        network = null;
+    });
+}
+
+function startOnlineGameAsHost() {
+    initNetwork();
+    gameState = "HOSTING";
+    currentStatus.text = "Generating ID...";
+    network.initHost((id) => {
+        onlineId = id;
+        currentStatus.text = `Waiting for Opponent... Code: ${id.split('-')[1]}`;
+    });
+
+    // Callback when someone connects to us
+    network.onConnectCallback = () => {
+        console.log("Opponent Connected!");
+        // Host is Red (1), goes first
+        myPlayerColor = 1;
+        isOnlineTurn = true;
+
+        // Notify Joiner to start
+        network.send({ type: 'START' });
+
+        startGame("ONLINE");
+        resetStatusText();
+    };
+}
+
+function joinOnlineGame(code) {
+    if (!code || code.length < 4) return;
+
+    initNetwork();
+    const fullId = "QW-" + code.toUpperCase();
+    joinStatusMsg = "Connecting...";
+
+    network.initJoin(fullId, () => {
+        // On Connect
+        joinStatusMsg = "Connected! Waiting for Host...";
+    }, (err) => {
+        joinStatusMsg = "Error: " + err;
+        // console.error(err);
+    });
+}
+
+function applyOpponentMove(move) {
+    const { start, end } = move; // {r,c}
+    const startKey = `${start.r},${start.c}`;
+    const endKey = `${end.r},${end.c}`;
+
+    // Apply move locally without valid checks (trust opponent)
+    // But we should double check validity if we wanted to be secure
+
+    board[endKey] = board[startKey];
+    delete board[startKey];
+
+    const equations = checkForEquations(end.r, end.c, currentPlayer); // currentPlayer should be opponent
+    if (equations.length > 0) {
+        animationQueue.push(...equations);
+    } else {
+        currentPlayer = currentPlayer === 1 ? 2 : 1;
+        isOnlineTurn = true; // My turn now
+        resetStatusText();
+    }
+}
+
 function startGame(mode) {
     gameMode = mode;
     gameState = "PLAYING";
     previousState = "MENU";
-    currentPlayer = 2; // Blue Always Starts
+    currentPlayer = 2; // Blue Always Starts? NO.
+    // In Original code: currentPlayer = 2 (Blue Starts).
+    // Let's keep that rule: BLUE STARTS.
+
+    // ADJUSTMENT: If Blue Starts
+    // Host (Red) = Player 1
+    // Joiner (Blue) = Player 2
+    // So Joiner moves first!
+
+    currentPlayer = 2;
+
+    if (mode === "ONLINE") {
+        // If I am Host (Red/1), and Blue(2) starts -> Not my turn.
+        // If I am Joiner (Blue/2), and Blue(2) starts -> My turn.
+        if (myPlayerColor === 2) isOnlineTurn = true;
+        else isOnlineTurn = false;
+    }
+
     selectedCoin = null;
     validMoves = [];
     animationQueue = [];
@@ -57,6 +176,7 @@ function startGame(mode) {
     initBoard();
     resetStatusText();
 }
+
 
 function triggerComputerTurn() {
     if (isAIThinking || gameState !== "PLAYING") return;
@@ -214,9 +334,21 @@ function drawMenu() {
     ctx.fillText("THE ALGEBRA STRATEGY GAME", canvas.width / 2, 180);
 
     // Draw Buttons
-    [btnPVP, btnPVC, btnInstr].forEach(btn => {
-        const hovered = isHovered(btn);
+    let buttons = [];
+    if (gameState === "MENU") {
+        buttons = [btnPVP, btnPVC, btnOnline, btnInstr];
+    } else if (gameState === "ONLINE_MENU") {
+        // Title for Online Menu
+        ctx.fillStyle = COLORS.MENU_ACCENT;
+        ctx.font = "700 24px 'Cinzel', serif";
+        ctx.fillText("ONLINE MODE", canvas.width / 2, 210);
 
+        buttons = [btnHost, btnJoin, btnBack];
+    }
+
+    buttons.forEach(btn => {
+        const hovered = isHovered(btn);
+        // ... (rest of drawing logic is same, but we reuse loop)
         ctx.fillStyle = hovered ? COLORS.MENU_BTN_HOVER : COLORS.MENU_BTN;
         drawSharpRect(btn.x, btn.y, btn.w, btn.h);
         ctx.fill();
@@ -231,6 +363,72 @@ function drawMenu() {
         ctx.textBaseline = "middle";
         ctx.fillText(btn.text.toUpperCase(), btn.x + btn.w / 2, btn.y + btn.h / 2);
     });
+
+    if (gameState === "HOSTING") {
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = "400 18px 'Lato', sans-serif";
+        ctx.fillText(currentStatus.text, canvas.width / 2, 500);
+
+        // Show Back button to cancel hosting
+        const hovered = isHovered(btnBack);
+        ctx.fillStyle = hovered ? COLORS.MENU_BTN_HOVER : COLORS.MENU_BTN;
+        drawSharpRect(btnBack.x, btnBack.y, btnBack.w, btnBack.h);
+        ctx.fill();
+        ctx.strokeStyle = hovered ? COLORS.MENU_ACCENT : COLORS.BOARD_LIGHT;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = hovered ? COLORS.WHITE : COLORS.MENU_TEXT;
+        ctx.fillText("BACK", btnBack.x + btnBack.w / 2, btnBack.y + btnBack.h / 2);
+    }
+
+    if (gameState === "JOINING") {
+        ctx.fillStyle = COLORS.MENU_ACCENT;
+        ctx.font = "700 36px 'Cinzel', serif";
+        ctx.fillText("ENTER HOST CODE", canvas.width / 2, 150);
+
+        // Input Box Graphic
+        ctx.fillStyle = "#0f172a";
+        ctx.strokeStyle = COLORS.BOARD_LIGHT;
+        ctx.lineWidth = 2;
+        const metrics = ctx.measureText(joinCodeInput || "____");
+        const w = 200;
+        const h = 50;
+        const x = (canvas.width - w) / 2;
+        const y = 220;
+
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeRect(x, y, w, h);
+
+        ctx.fillStyle = "#f8fafc";
+        ctx.font = "400 24px 'Lato', sans-serif";
+        ctx.fillText(joinCodeInput + (Date.now() % 1000 < 500 ? "|" : ""), canvas.width / 2, y + h / 2);
+
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "italic 16px 'Lato', sans-serif";
+        ctx.fillText("(Type 4-character code)", canvas.width / 2, y + 80);
+
+        if (joinStatusMsg) {
+            ctx.fillStyle = joinStatusMsg.startsWith("Error") ? COLORS.ANIM_FAIL : COLORS.ANIM_IDENTIFY;
+            ctx.fillText(joinStatusMsg, canvas.width / 2, y + 120);
+        }
+
+        // Buttons: Connect, Back
+        const btnConnect = { x: 130, y: 380, w: 300, h: 50, text: "CONNECT" };
+        const btnCancel = { x: 130, y: 450, w: 300, h: 50, text: "BACK" };
+
+        [btnConnect, btnCancel].forEach(btn => {
+            const hovered = isHovered(btn);
+            ctx.fillStyle = hovered ? COLORS.MENU_BTN_HOVER : COLORS.MENU_BTN;
+            drawSharpRect(btn.x, btn.y, btn.w, btn.h);
+            ctx.fill();
+            ctx.strokeStyle = hovered ? COLORS.MENU_ACCENT : COLORS.BOARD_LIGHT;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.fillStyle = hovered ? COLORS.WHITE : COLORS.MENU_TEXT;
+            ctx.font = "700 16px 'Cinzel', serif";
+            ctx.fillText(btn.text, btn.x + btn.w / 2, btn.y + btn.h / 2);
+        });
+    }
 }
 
 function drawBoard() {
@@ -340,7 +538,7 @@ function drawBoard() {
 
 // --- MAIN LOOP ---
 function update(timestamp) {
-    if (gameState === "MENU") {
+    if (gameState === "MENU" || gameState === "ONLINE_MENU" || gameState === "HOSTING" || gameState === "JOINING") {
         drawMenu();
     } else if (gameState === "INSTRUCTIONS") {
         drawInstructions();
@@ -402,6 +600,16 @@ function resetStatusText() {
         } else {
             currentStatus.text = "Your Turn (Blue)";
             currentStatus.color = COLORS.ANIM_IDENTIFY;
+            currentStatus.text = "Your Turn (Blue)";
+            currentStatus.color = COLORS.ANIM_IDENTIFY;
+        }
+    } else if (gameMode === "ONLINE") {
+        if (isOnlineTurn) {
+            currentStatus.text = "Your Turn";
+            currentStatus.color = COLORS.ANIM_IDENTIFY;
+        } else {
+            currentStatus.text = "Opponent's Turn";
+            currentStatus.color = COLORS.RED_COIN_LIGHT;
         }
     } else {
         // PVP
@@ -428,6 +636,41 @@ canvas.addEventListener('pointerdown', (e) => {
             startGame("PVC");
         } else if (x >= btnInstr.x && x <= btnInstr.x + btnInstr.w && y >= btnInstr.y && y <= btnInstr.y + btnInstr.h) {
             gameState = "INSTRUCTIONS";
+        } else if (x >= btnOnline.x && x <= btnOnline.x + btnOnline.w && y >= btnOnline.y && y <= btnOnline.y + btnOnline.h) {
+            gameState = "ONLINE_MENU";
+        }
+        return;
+    }
+
+    if (gameState === "HOSTING") {
+        if (x >= btnBack.x && x <= btnBack.x + btnBack.w && y >= btnBack.y && y <= btnBack.y + btnBack.h) {
+            if (network) network.close();
+            gameState = "ONLINE_MENU";
+        }
+        return;
+    }
+
+    if (gameState === "ONLINE_MENU") {
+        if (x >= btnHost.x && x <= btnHost.x + btnHost.w && y >= btnHost.y && y <= btnHost.y + btnHost.h) {
+            startOnlineGameAsHost();
+        } else if (x >= btnJoin.x && x <= btnJoin.x + btnJoin.w && y >= btnJoin.y && y <= btnJoin.y + btnJoin.h) {
+            gameState = "JOINING";
+            joinCodeInput = "";
+            joinStatusMsg = "";
+        } else if (x >= btnBack.x && x <= btnBack.x + btnBack.w && y >= btnBack.y && y <= btnBack.y + btnBack.h) {
+            gameState = "MENU";
+        }
+        return;
+    }
+
+    if (gameState === "JOINING") {
+        const btnConnect = { x: 130, y: 380, w: 300, h: 50, text: "CONNECT" };
+        const btnCancel = { x: 130, y: 450, w: 300, h: 50, text: "BACK" };
+
+        if (x >= btnConnect.x && x <= btnConnect.x + btnConnect.w && y >= btnConnect.y && y <= btnConnect.y + btnConnect.h) {
+            joinOnlineGame(joinCodeInput);
+        } else if (x >= btnCancel.x && x <= btnCancel.x + btnCancel.w && y >= btnCancel.y && y <= btnCancel.y + btnCancel.h) {
+            gameState = "ONLINE_MENU";
         }
         return;
     }
@@ -467,6 +710,9 @@ canvas.addEventListener('pointerdown', (e) => {
     // Prevent Human from clicking during Computer's turn in PVC mode
     if (gameMode === "PVC" && currentPlayer === 1) return;
 
+    // Prevent Human from clicking during Opponent's turn in ONLINE mode
+    if (gameMode === "ONLINE" && !isOnlineTurn) return;
+
     const c = Math.floor(x / TILE_SIZE);
     const r = Math.floor(y / TILE_SIZE);
     const key = `${r},${c}`;
@@ -478,6 +724,15 @@ canvas.addEventListener('pointerdown', (e) => {
         }
         const isMoveValid = validMoves.some(m => m.r === r && m.c === c);
         if (isMoveValid) {
+            // ONLINE: Send Move
+            if (gameMode === "ONLINE") {
+                network.send({
+                    type: 'MOVE',
+                    move: { start: { r: startR, c: startC }, end: { r, c } }
+                });
+                isOnlineTurn = false;
+            }
+
             board[`${r},${c}`] = board[`${startR},${startC}`];
             delete board[`${startR},${startC}`];
             selectedCoin = null; validMoves = [];
@@ -507,5 +762,22 @@ canvas.addEventListener('mousemove', (e) => {
     mouse.x = (e.clientX - rect.left) * scaleX;
     mouse.y = (e.clientY - rect.top) * scaleY;
 });
+
+
+// --- KEYBOARD INPUT FOR JOINING ---
+window.addEventListener('keydown', (e) => {
+    if (gameState === "JOINING") {
+        if (e.key === "Backspace") {
+            joinCodeInput = joinCodeInput.slice(0, -1);
+        } else if (e.key.length === 1 && /[a-zA-Z0-9]/.test(e.key)) {
+            if (joinCodeInput.length < 4) {
+                joinCodeInput += e.key.toUpperCase();
+            }
+        } else if (e.key === "Enter") {
+            joinOnlineGame(joinCodeInput);
+        }
+    }
+});
+
 
 requestAnimationFrame(update);

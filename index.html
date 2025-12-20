@@ -13,10 +13,14 @@
 </head>
 
 <body>
-    <canvas id="gameCanvas" width="560" height="700"></canvas>
+    <div id="game-container">
+        <canvas id="gameCanvas" width="560" height="700"></canvas>
+    </div>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="constants.js"></script>
     <script src="logic.js"></script>
-    <script src="main.js"></script>
+    <script src="network.js"></script>
+    <script src="main.js" defer></script>
 </body>
 
 </html>
