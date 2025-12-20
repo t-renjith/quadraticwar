@@ -445,7 +445,9 @@ function drawBoard() {
             ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
 
             // Show valid moves if it's human's turn
-            const isHumanTurn = (gameMode === 'PVP') || (gameMode === 'PVC' && currentPlayer === 2);
+            const isHumanTurn = (gameMode === 'PVP') ||
+                (gameMode === 'PVC' && currentPlayer === 2) ||
+                (gameMode === 'ONLINE' && isOnlineTurn);
 
             if (!currentAnimation && isHumanTurn) {
                 const isValid = validMoves.some(m => m.r === r && m.c === c);
