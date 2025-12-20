@@ -319,119 +319,185 @@ function drawGameOver() {
     ctx.fillText(btnGameOverMenu.text.toUpperCase(), btnGameOverMenu.x + btnGameOverMenu.w / 2, btnGameOverMenu.y + btnGameOverMenu.h / 2);
 }
 
+
+
+function drawRoundedRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+}
+
 function drawMenu() {
-    ctx.fillStyle = COLORS.BG_DARK;
+    // 1. Background Gradient
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    bgGrad.addColorStop(0, "#0f172a"); // Slate 900
+    bgGrad.addColorStop(1, "#1e293b"); // Slate 800
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Title Decoration
+    // 2. Title Decoration
+    ctx.shadowColor = "rgba(79, 70, 229, 0.4)"; // Indigo Glow
+    ctx.shadowBlur = 15;
+
     ctx.font = "700 52px 'Cinzel', serif";
     ctx.fillStyle = COLORS.MENU_ACCENT;
+    ctx.textAlign = "center";
     ctx.fillText("QUADRATIC", canvas.width / 2, 100);
+
     ctx.font = "400 36px 'Cinzel', serif";
     ctx.fillStyle = COLORS.MENU_TEXT;
     ctx.fillText("WAR", canvas.width / 2, 145);
 
+    ctx.shadowBlur = 0; // Reset shadow
+
     ctx.font = "300 14px 'Lato', sans-serif";
-    ctx.fillStyle = "#475569"; // Slate 600
+    ctx.fillStyle = "#94a3b8"; // Slate 400
     ctx.fillText("THE ALGEBRA STRATEGY GAME", canvas.width / 2, 180);
 
-    // Draw Buttons
+    // 3. Determine Buttons based on State
     let buttons = [];
+    let title = "";
+
     if (gameState === "MENU") {
         buttons = [btnPVP, btnPVC, btnOnline, btnInstr];
     } else if (gameState === "ONLINE_MENU") {
-        // Title for Online Menu
-        ctx.fillStyle = COLORS.MENU_ACCENT;
-        ctx.font = "700 24px 'Cinzel', serif";
-        ctx.fillText("ONLINE MODE", canvas.width / 2, 210);
-
+        title = "ONLINE MODE";
         buttons = [btnHost, btnJoin, btnBack];
     }
 
+    if (title) {
+        ctx.fillStyle = COLORS.MENU_ACCENT;
+        ctx.font = "700 24px 'Cinzel', serif";
+        ctx.fillText(title, canvas.width / 2, 215);
+    }
+
+    // 4. Draw Buttons
     buttons.forEach(btn => {
         const hovered = isHovered(btn);
-        // ... (rest of drawing logic is same, but we reuse loop)
-        ctx.fillStyle = hovered ? COLORS.MENU_BTN_HOVER : COLORS.MENU_BTN;
-        drawSharpRect(btn.x, btn.y, btn.w, btn.h);
+
+        // Button Shadow
+        ctx.shadowColor = "rgba(0,0,0,0.3)";
+        ctx.shadowBlur = 10;
+        ctx.shadowOffsetY = 4;
+
+        if (hovered) {
+            ctx.fillStyle = COLORS.MENU_BTN_HOVER;
+            ctx.shadowColor = "rgba(79, 70, 229, 0.3)"; // Indigo Glow
+            ctx.shadowBlur = 15;
+        } else {
+            ctx.fillStyle = COLORS.MENU_BTN;
+        }
+
+        drawRoundedRect(btn.x, btn.y, btn.w, btn.h, 10);
         ctx.fill();
 
-        ctx.strokeStyle = hovered ? COLORS.MENU_ACCENT : COLORS.BOARD_LIGHT;
-        ctx.lineWidth = 1;
+        // Reset Shadow for Border
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+
+        ctx.strokeStyle = hovered ? COLORS.MENU_ACCENT : "#334155";
+        ctx.lineWidth = hovered ? 2 : 1;
         ctx.stroke();
 
         ctx.fillStyle = hovered ? COLORS.WHITE : COLORS.MENU_TEXT;
-        ctx.font = "400 16px 'Cinzel', serif";
+        ctx.font = "700 16px 'Cinzel', serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(btn.text.toUpperCase(), btn.x + btn.w / 2, btn.y + btn.h / 2);
     });
 
     if (gameState === "HOSTING") {
-        ctx.fillStyle = COLORS.WHITE;
-        ctx.font = "400 18px 'Lato', sans-serif";
-        ctx.fillText(currentStatus.text, canvas.width / 2, 500);
+        ctx.fillStyle = "#e2e8f0";
+        ctx.font = "400 22px 'Lato', sans-serif";
+        ctx.fillText(currentStatus.text, canvas.width / 2, 480);
 
-        // Show Back button to cancel hosting
-        const hovered = isHovered(btnBack);
-        ctx.fillStyle = hovered ? COLORS.MENU_BTN_HOVER : COLORS.MENU_BTN;
-        drawSharpRect(btnBack.x, btnBack.y, btnBack.w, btnBack.h);
-        ctx.fill();
-        ctx.strokeStyle = hovered ? COLORS.MENU_ACCENT : COLORS.BOARD_LIGHT;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.fillStyle = hovered ? COLORS.WHITE : COLORS.MENU_TEXT;
-        ctx.fillText("BACK", btnBack.x + btnBack.w / 2, btnBack.y + btnBack.h / 2);
+        // Waiting animation (dots)
+        const dots = ".".repeat(Math.floor(Date.now() / 500) % 4);
+        ctx.fillText(dots, canvas.width / 2, 510);
     }
 
     if (gameState === "JOINING") {
+        // Overlay for Input
+        ctx.fillStyle = "rgba(15, 23, 42, 0.8)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
         ctx.fillStyle = COLORS.MENU_ACCENT;
         ctx.font = "700 36px 'Cinzel', serif";
-        ctx.fillText("ENTER HOST CODE", canvas.width / 2, 150);
+        ctx.fillText("ENTER CODE", canvas.width / 2, 180);
 
-        // Input Box Graphic
-        ctx.fillStyle = "#0f172a";
-        ctx.strokeStyle = COLORS.BOARD_LIGHT;
-        ctx.lineWidth = 2;
-        const metrics = ctx.measureText(joinCodeInput || "____");
-        const w = 200;
-        const h = 50;
+        // Input Box
+        const w = 240;
+        const h = 60;
         const x = (canvas.width - w) / 2;
-        const y = 220;
+        const y = 240;
 
-        ctx.fillRect(x, y, w, h);
-        ctx.strokeRect(x, y, w, h);
+        // Input bg
+        ctx.fillStyle = "#0f172a";
+        drawRoundedRect(x, y, w, h, 8);
+        ctx.fill();
+        ctx.strokeStyle = COLORS.MENU_ACCENT;
+        ctx.lineWidth = 2;
+        ctx.stroke();
 
+        // Typed Text
         ctx.fillStyle = "#f8fafc";
-        ctx.font = "400 24px 'Lato', sans-serif";
-        ctx.fillText(joinCodeInput + (Date.now() % 1000 < 500 ? "|" : ""), canvas.width / 2, y + h / 2);
+        ctx.font = "700 32px 'Lato', sans-serif"; // Bigger font
+        ctx.letterSpacing = "4px";
+        const displayCode = joinCodeInput || "";
+        ctx.fillText(displayCode + (Date.now() % 1000 < 500 ? "|" : ""), canvas.width / 2, y + h / 2 + 2);
 
+        // Helper text
         ctx.fillStyle = "#94a3b8";
         ctx.font = "italic 16px 'Lato', sans-serif";
-        ctx.fillText("(Type 4-character code)", canvas.width / 2, y + 80);
+        ctx.letterSpacing = "0px";
+        ctx.fillText("Type the 4-character host code", canvas.width / 2, y + 90);
 
         if (joinStatusMsg) {
             ctx.fillStyle = joinStatusMsg.startsWith("Error") ? COLORS.ANIM_FAIL : COLORS.ANIM_IDENTIFY;
-            ctx.fillText(joinStatusMsg, canvas.width / 2, y + 120);
+            ctx.font = "600 16px 'Lato', sans-serif";
+            ctx.fillText(joinStatusMsg, canvas.width / 2, y + 130);
         }
 
-        // Buttons: Connect, Back
-        const btnConnect = { x: 130, y: 380, w: 300, h: 50, text: "CONNECT" };
-        const btnCancel = { x: 130, y: 450, w: 300, h: 50, text: "BACK" };
+        // Buttons: Connect, Back (Styled same as above)
+        const btnConnect = { x: 130, y: 400, w: 300, h: 50, text: "CONNECT" };
+        const btnCancel = { x: 130, y: 470, w: 300, h: 50, text: "CANCEL" };
 
         [btnConnect, btnCancel].forEach(btn => {
             const hovered = isHovered(btn);
-            ctx.fillStyle = hovered ? COLORS.MENU_BTN_HOVER : COLORS.MENU_BTN;
-            drawSharpRect(btn.x, btn.y, btn.w, btn.h);
+            // Button Shadow
+            ctx.shadowColor = "rgba(0,0,0,0.3)";
+            ctx.shadowBlur = 10;
+            ctx.shadowOffsetY = 4;
+
+            if (hovered) ctx.fillStyle = COLORS.MENU_BTN_HOVER;
+            else ctx.fillStyle = COLORS.MENU_BTN;
+
+            drawRoundedRect(btn.x, btn.y, btn.w, btn.h, 10);
             ctx.fill();
-            ctx.strokeStyle = hovered ? COLORS.MENU_ACCENT : COLORS.BOARD_LIGHT;
-            ctx.lineWidth = 1;
+
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetY = 0;
+
+            ctx.strokeStyle = hovered ? COLORS.MENU_ACCENT : "#334155";
             ctx.stroke();
+
             ctx.fillStyle = hovered ? COLORS.WHITE : COLORS.MENU_TEXT;
             ctx.font = "700 16px 'Cinzel', serif";
             ctx.fillText(btn.text, btn.x + btn.w / 2, btn.y + btn.h / 2);
         });
+
+        return; // Skip normal button drawing for Joining overlay
     }
 }
+
 
 function drawBoard() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
