@@ -734,6 +734,7 @@ canvas.addEventListener('pointerdown', (e) => {
         }
         const isMoveValid = validMoves.some(m => m.r === r && m.c === c);
         if (isMoveValid) {
+            // ... move execution ...
             // ONLINE: Send Move
             if (gameMode === "ONLINE") {
                 network.send({
@@ -751,16 +752,30 @@ canvas.addEventListener('pointerdown', (e) => {
                 animationQueue.push(...equations);
             } else {
                 currentPlayer = currentPlayer === 1 ? 2 : 1;
+
+                // SYNC ONLINE TURN
+                if (gameMode === "ONLINE") {
+                    isOnlineTurn = (currentPlayer === myPlayerColor);
+                }
+
                 resetStatusText();
             }
         } else {
+            // Try selecting the new coin
             if (board[key] && board[key].p === currentPlayer) {
-                selectedCoin = { r, c }; validMoves = getValidMoves(r, c, currentPlayer);
-            } else { selectedCoin = null; validMoves = []; }
+                selectedCoin = { r, c };
+                validMoves = getValidMoves(r, c, currentPlayer);
+                console.log(`Selected ${r},${c}. Player: ${currentPlayer}. Valid Moves:`, validMoves);
+            } else {
+                selectedCoin = null; validMoves = [];
+            }
         }
     } else {
         if (board[key] && board[key].p === currentPlayer) {
-            selectedCoin = { r, c }; validMoves = getValidMoves(r, c, currentPlayer);
+            selectedCoin = { r, c };
+            validMoves = getValidMoves(r, c, currentPlayer);
+            console.log(`Initial Select ${r},${c}. Player: ${currentPlayer}. Valid Moves:`, validMoves);
+            console.log(`Debug: Mode=${gameMode}, OnlineTurn=${isOnlineTurn}, MyColor=${myPlayerColor}`);
         }
     }
 });
