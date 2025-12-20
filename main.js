@@ -572,6 +572,12 @@ function update(timestamp) {
                             gameResult = endCheck;
                         } else {
                             currentPlayer = currentPlayer === 1 ? 2 : 1;
+
+                            // SYNC ONLINE TURN
+                            if (gameMode === "ONLINE") {
+                                isOnlineTurn = (currentPlayer === myPlayerColor);
+                            }
+
                             resetStatusText();
                         }
                     }
