@@ -6,7 +6,7 @@ const TILE_SIZE = 70;
 // --- COLORS ---
 const COLORS = {
     WHITE: "#1E293B",         // Used for text primarily now, so Dark Slate
-    BG_DARK: "#F8FAFC",       // Slate 50 (Light Background)
+    BG_DARK: "#E2E8F0",       // Slate 200 (Matches Board Light)
     BOARD_LIGHT: "#E2E8F0",   // Slate 200 (Light Checkerboard)
     BOARD_DARK: "#CBD5E1",    // Slate 300 (Darker Checkerboard)
 
@@ -26,8 +26,8 @@ const COLORS = {
     ANIM_FAIL: "#DC2626",       // Red 600
 
     // Menu
-    MENU_BTN: "#E2E8F0",        // Slate 200
-    MENU_BTN_HOVER: "#CBD5E1",  // Slate 300
+    MENU_BTN: "#FFFFFF",        // White
+    MENU_BTN_HOVER: "#F8FAFC",  // Slate 50
     MENU_TEXT: "#0F172A",       // Slate 900 (Dark Text)
     MENU_ACCENT: "#4F46E5"      // Indigo 600
 };

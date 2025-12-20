@@ -336,10 +336,10 @@ function drawRoundedRect(x, y, w, h, r) {
 }
 
 function drawMenu() {
-    // 1. Background Gradient
+    // 1. Background Gradient (Board Matches)
     const bgGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    bgGrad.addColorStop(0, "#0f172a"); // Slate 900
-    bgGrad.addColorStop(1, "#1e293b"); // Slate 800
+    bgGrad.addColorStop(0, "#E2E8F0"); // Slate 200 (Board Light)
+    bgGrad.addColorStop(1, "#CBD5E1"); // Slate 300 (Board Dark)
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -350,17 +350,7 @@ function drawMenu() {
     ctx.font = "700 52px 'Cinzel', serif";
     ctx.fillStyle = COLORS.MENU_ACCENT;
     ctx.textAlign = "center";
-    ctx.fillText("QUADRATIC", canvas.width / 2, 100);
-
-    ctx.font = "400 36px 'Cinzel', serif";
-    ctx.fillStyle = COLORS.MENU_TEXT;
-    ctx.fillText("WAR", canvas.width / 2, 145);
-
-    ctx.shadowBlur = 0; // Reset shadow
-
-    ctx.font = "300 14px 'Lato', sans-serif";
-    ctx.fillStyle = "#94a3b8"; // Slate 400
-    ctx.fillText("THE ALGEBRA STRATEGY GAME", canvas.width / 2, 180);
+    ctx.fillText("QUADRATIC WAR", canvas.width / 2, 100);
 
     // 3. Determine Buttons based on State
     let buttons = [];
@@ -415,18 +405,43 @@ function drawMenu() {
     });
 
     if (gameState === "HOSTING") {
-        ctx.fillStyle = "#e2e8f0";
+        ctx.fillStyle = COLORS.MENU_TEXT; // Dark Text
         ctx.font = "400 22px 'Lato', sans-serif";
         ctx.fillText(currentStatus.text, canvas.width / 2, 480);
 
         // Waiting animation (dots)
         const dots = ".".repeat(Math.floor(Date.now() / 500) % 4);
         ctx.fillText(dots, canvas.width / 2, 510);
+
+        // Show Back button to cancel hosting
+        const hovered = isHovered(btnBack);
+
+        // Shadow
+        ctx.shadowColor = "rgba(0,0,0,0.3)";
+        ctx.shadowBlur = 10;
+        ctx.shadowOffsetY = 4;
+
+        if (hovered) ctx.fillStyle = COLORS.MENU_BTN_HOVER;
+        else ctx.fillStyle = COLORS.MENU_BTN;
+
+        drawRoundedRect(btnBack.x, btnBack.y, btnBack.w, btnBack.h, 10);
+        ctx.fill();
+
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+
+        ctx.strokeStyle = hovered ? COLORS.MENU_ACCENT : "#334155";
+        ctx.lineWidth = hovered ? 2 : 1;
+        ctx.stroke();
+
+        ctx.fillStyle = hovered ? COLORS.WHITE : COLORS.MENU_TEXT;
+        ctx.font = "700 16px 'Cinzel', serif"; // Consistent font
+        ctx.fillText("BACK", btnBack.x + btnBack.w / 2, btnBack.y + btnBack.h / 2);
     }
 
     if (gameState === "JOINING") {
         // Overlay for Input
-        ctx.fillStyle = "rgba(15, 23, 42, 0.8)";
+        ctx.fillStyle = "rgba(241, 245, 249, 0.9)"; // Slate 100 with high opacity
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         ctx.fillStyle = COLORS.MENU_ACCENT;
@@ -440,7 +455,7 @@ function drawMenu() {
         const y = 240;
 
         // Input bg
-        ctx.fillStyle = "#0f172a";
+        ctx.fillStyle = "#FFFFFF";
         drawRoundedRect(x, y, w, h, 8);
         ctx.fill();
         ctx.strokeStyle = COLORS.MENU_ACCENT;
@@ -448,7 +463,7 @@ function drawMenu() {
         ctx.stroke();
 
         // Typed Text
-        ctx.fillStyle = "#f8fafc";
+        ctx.fillStyle = "#1e293b"; // Slate 800
         ctx.font = "700 32px 'Lato', sans-serif"; // Bigger font
         ctx.letterSpacing = "4px";
         const displayCode = joinCodeInput || "";
