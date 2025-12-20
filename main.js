@@ -69,10 +69,12 @@ function initNetwork() {
             // Joiner receives START from Host
             // PER USER REQUEST: Host is Blue (2), Joiner is Red (1)
             // Blue starts.
+            // PER USER REQUEST: Host is Blue (2), Joiner is Red (1)
+            // Blue starts.
             startGame("ONLINE");
             myPlayerColor = 1; // Joiner is Red
             isOnlineTurn = false; // Blue (Host) starts
-            resetStatusText();
+            resetStatusText(); // Update UI with correct roles
         }
     });
 
@@ -96,14 +98,13 @@ function startOnlineGameAsHost() {
     // Callback when someone connects to us
     network.onConnectCallback = () => {
         console.log("Opponent Connected!");
-        // Host is Blue (2), goes first
-        myPlayerColor = 2;
-        isOnlineTurn = true;
-
         // Notify Joiner to start
         network.send({ type: 'START' });
 
         startGame("ONLINE");
+        // Host is Blue (2), goes first
+        myPlayerColor = 2;
+        isOnlineTurn = true;
         resetStatusText();
     };
 }
@@ -160,11 +161,13 @@ function startGame(mode) {
 
     currentPlayer = 2;
 
+    currentPlayer = 2;
+
     if (mode === "ONLINE") {
-        // If I am Host (Blue/2), and Blue(2) starts -> My turn.
-        // If I am Joiner (Red/1), and Blue(2) starts -> Not my turn.
-        if (myPlayerColor === 2) isOnlineTurn = true;
-        else isOnlineTurn = false;
+        // We will set isOnlineTurn explicitly in the caller (Host/Join functions)
+        // to avoid race conditions or default value overwrites.
+        // Default to false primarily, but the callers override immediately.
+        isOnlineTurn = false;
     }
 
     selectedCoin = null;
