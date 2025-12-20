@@ -23,6 +23,7 @@ let gameResult = { status: "", reason: "" }; // Store win/loss info
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+const hiddenInput = document.getElementById('hiddenInput');
 
 // --- BUTTONS FOR MENU ---
 const btnPVP = { x: 130, y: 180, w: 300, h: 50, text: "2 Players (Local)" };
@@ -747,6 +748,7 @@ canvas.addEventListener('pointerdown', (e) => {
         } else if (x >= btnJoin.x && x <= btnJoin.x + btnJoin.w && y >= btnJoin.y && y <= btnJoin.y + btnJoin.h) {
             gameState = "JOINING";
             joinCodeInput = "";
+            hiddenInput.value = ""; // Clear hidden input
             joinStatusMsg = "";
         } else if (x >= btnBack.x && x <= btnBack.x + btnBack.w && y >= btnBack.y && y <= btnBack.y + btnBack.h) {
             gameState = "MENU";
@@ -755,13 +757,22 @@ canvas.addEventListener('pointerdown', (e) => {
     }
 
     if (gameState === "JOINING") {
-        const btnConnect = { x: 130, y: 380, w: 300, h: 50, text: "CONNECT" };
-        const btnCancel = { x: 130, y: 450, w: 300, h: 50, text: "BACK" };
+        const btnConnect = { x: 130, y: 400, w: 300, h: 50, text: "CONNECT" }; // Corrected Y coords from drawMenu
+        const btnCancel = { x: 130, y: 470, w: 300, h: 50, text: "CANCEL" };
+
+        // Check Input Box Area
+        const inputY = 240;
+        const inputH = 60;
+        if (y >= inputY && y <= inputY + inputH) {
+            hiddenInput.focus();
+            return;
+        }
 
         if (x >= btnConnect.x && x <= btnConnect.x + btnConnect.w && y >= btnConnect.y && y <= btnConnect.y + btnConnect.h) {
             joinOnlineGame(joinCodeInput);
         } else if (x >= btnCancel.x && x <= btnCancel.x + btnCancel.w && y >= btnCancel.y && y <= btnCancel.y + btnCancel.h) {
             gameState = "ONLINE_MENU";
+            hiddenInput.blur();
         }
         return;
     }
@@ -871,16 +882,31 @@ canvas.addEventListener('mousemove', (e) => {
 
 
 // --- KEYBOARD INPUT FOR JOINING ---
+// --- INPUT HANDLING FOR JOINING ---
+hiddenInput.addEventListener('input', (e) => {
+    if (gameState === "JOINING") {
+        let val = hiddenInput.value.toUpperCase();
+        // Limit to alphanum
+        val = val.replace(/[^A-Z0-9]/g, '');
+        if (val.length > 4) val = val.substring(0, 4);
+
+        joinCodeInput = val;
+        hiddenInput.value = val; // Keep sync
+    }
+});
+
+hiddenInput.addEventListener('keydown', (e) => {
+    if (e.key === "Enter" && gameState === "JOINING") {
+        joinOnlineGame(joinCodeInput);
+        hiddenInput.blur();
+    }
+});
+
+// We can keep the window listener for desktop, but sync with hidden input
 window.addEventListener('keydown', (e) => {
     if (gameState === "JOINING") {
-        if (e.key === "Backspace") {
-            joinCodeInput = joinCodeInput.slice(0, -1);
-        } else if (e.key.length === 1 && /[a-zA-Z0-9]/.test(e.key)) {
-            if (joinCodeInput.length < 4) {
-                joinCodeInput += e.key.toUpperCase();
-            }
-        } else if (e.key === "Enter") {
-            joinOnlineGame(joinCodeInput);
+        if (document.activeElement !== hiddenInput) {
+            hiddenInput.focus();
         }
     }
 });
