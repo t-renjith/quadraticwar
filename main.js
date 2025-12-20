@@ -67,13 +67,11 @@ function initNetwork() {
             applyOpponentMove(data.move);
         } else if (data.type === 'START') {
             // Joiner receives START from Host
-            // Host is ALWAYS Red (1), Joiner is ALWAYS Blue (2)
-            // But wait, traditionally Host starts? 
-            // Let's stick to standard: Red starts.
-            // If Host is Red, they move first.
+            // PER USER REQUEST: Host is Blue (2), Joiner is Red (1)
+            // Blue starts.
             startGame("ONLINE");
-            myPlayerColor = 2; // Joiner is Blue
-            isOnlineTurn = false; // Red (Host) starts
+            myPlayerColor = 1; // Joiner is Red
+            isOnlineTurn = false; // Blue (Host) starts
             resetStatusText();
         }
     });
@@ -98,8 +96,8 @@ function startOnlineGameAsHost() {
     // Callback when someone connects to us
     network.onConnectCallback = () => {
         console.log("Opponent Connected!");
-        // Host is Red (1), goes first
-        myPlayerColor = 1;
+        // Host is Blue (2), goes first
+        myPlayerColor = 2;
         isOnlineTurn = true;
 
         // Notify Joiner to start
@@ -163,8 +161,8 @@ function startGame(mode) {
     currentPlayer = 2;
 
     if (mode === "ONLINE") {
-        // If I am Host (Red/1), and Blue(2) starts -> Not my turn.
-        // If I am Joiner (Blue/2), and Blue(2) starts -> My turn.
+        // If I am Host (Blue/2), and Blue(2) starts -> My turn.
+        // If I am Joiner (Red/1), and Blue(2) starts -> Not my turn.
         if (myPlayerColor === 2) isOnlineTurn = true;
         else isOnlineTurn = false;
     }
@@ -600,16 +598,16 @@ function resetStatusText() {
         } else {
             currentStatus.text = "Your Turn (Blue)";
             currentStatus.color = COLORS.ANIM_IDENTIFY;
-            currentStatus.text = "Your Turn (Blue)";
-            currentStatus.color = COLORS.ANIM_IDENTIFY;
         }
     } else if (gameMode === "ONLINE") {
         if (isOnlineTurn) {
-            currentStatus.text = "Your Turn";
-            currentStatus.color = COLORS.ANIM_IDENTIFY;
+            // I could be Red or Blue.
+            const pName = myPlayerColor === 1 ? "Red" : "Blue";
+            currentStatus.text = `Your Turn (${pName})`;
+            currentStatus.color = myPlayerColor === 1 ? COLORS.RED_COIN_LIGHT : COLORS.ANIM_IDENTIFY;
         } else {
             currentStatus.text = "Opponent's Turn";
-            currentStatus.color = COLORS.RED_COIN_LIGHT;
+            currentStatus.color = myPlayerColor === 1 ? COLORS.ANIM_IDENTIFY : COLORS.RED_COIN_LIGHT;
         }
     } else {
         // PVP
