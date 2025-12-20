@@ -5,6 +5,7 @@ let gameMode = null;    // "PVP", "PVC", "ONLINE"
 let network = null;     // NetworkManager instance
 let isHost = false;     // Am I the host?
 let onlineId = "";      // My ID or Host ID
+let myPlayerColor = 0;  // 1 (Red) or 2 (Blue)
 let isOnlineTurn = false; // Is it my turn in online mode?
 let joinCodeInput = "";   // Buffer for typing host code
 let joinStatusMsg = "";   // Status message for join screen
