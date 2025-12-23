@@ -194,6 +194,10 @@ function triggerComputerTurn() {
 }
 
 // --- DRAWING HELPERS ---
+function shouldRotateBoard() {
+    return gameMode === "ONLINE" && myPlayerColor === 1;
+}
+
 function drawSharpRect(x, y, w, h) {
     ctx.beginPath();
     ctx.rect(x, y, w, h);
@@ -519,6 +523,7 @@ function drawBoard() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // 1. Draw Tiles
+    const rotate = shouldRotateBoard();
     for (let r = 0; r < BOARD_ROWS; r++) {
         for (let c = 0; c < BOARD_COLS; c++) {
             const x = c * TILE_SIZE;
@@ -532,7 +537,11 @@ function drawBoard() {
                 (gameMode === 'ONLINE' && isOnlineTurn);
 
             if (!currentAnimation && isHumanTurn) {
-                const isValid = validMoves.some(m => m.r === r && m.c === c);
+                // visual (r,c) -> logical
+                const logR = rotate ? BOARD_ROWS - 1 - r : r;
+                const logC = rotate ? BOARD_COLS - 1 - c : c;
+
+                const isValid = validMoves.some(m => m.r === logR && m.c === logC);
                 if (isValid) {
                     ctx.strokeStyle = COLORS.HIGHLIGHT_VALID;
                     ctx.lineWidth = 3;
@@ -547,17 +556,31 @@ function drawBoard() {
         const anim = currentAnimation;
         let color = (anim.phase === 'IDENTIFY') ? COLORS.ANIM_IDENTIFY : (anim.isSuccess ? COLORS.ANIM_SUCCESS : COLORS.ANIM_FAIL);
         ctx.globalAlpha = 0.5; ctx.fillStyle = color;
-        anim.coords.forEach(pos => ctx.fillRect(pos.c * TILE_SIZE, pos.r * TILE_SIZE, TILE_SIZE, TILE_SIZE));
+
+        anim.coords.forEach(pos => {
+            let visR = rotate ? BOARD_ROWS - 1 - pos.r : pos.r;
+            let visC = rotate ? BOARD_COLS - 1 - pos.c : pos.c;
+            ctx.fillRect(visC * TILE_SIZE, visR * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        });
+
         ctx.globalAlpha = 1.0; ctx.strokeStyle = color; ctx.lineWidth = 4;
-        anim.coords.forEach(pos => ctx.strokeRect(pos.c * TILE_SIZE + 2, pos.r * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4));
+        anim.coords.forEach(pos => {
+            let visR = rotate ? BOARD_ROWS - 1 - pos.r : pos.r;
+            let visC = rotate ? BOARD_COLS - 1 - pos.c : pos.c;
+            ctx.strokeRect(visC * TILE_SIZE + 2, visR * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+        });
     }
 
     // 3. Coins
     for (let key in board) {
         const piece = board[key];
         const [r, c] = key.split(',').map(Number);
-        const x = c * TILE_SIZE + TILE_SIZE / 2;
-        const y = r * TILE_SIZE + TILE_SIZE / 2;
+
+        let visR = rotate ? BOARD_ROWS - 1 - r : r;
+        let visC = rotate ? BOARD_COLS - 1 - c : c;
+
+        const x = visC * TILE_SIZE + TILE_SIZE / 2;
+        const y = visR * TILE_SIZE + TILE_SIZE / 2;
         const radius = TILE_SIZE / 2 - 6;
 
         if (selectedCoin && selectedCoin.r === r && selectedCoin.c === c) {
@@ -815,59 +838,72 @@ canvas.addEventListener('pointerdown', (e) => {
     // Prevent Human from clicking during Opponent's turn in ONLINE mode
     if (gameMode === "ONLINE" && !isOnlineTurn) return;
 
-    const c = Math.floor(x / TILE_SIZE);
-    const r = Math.floor(y / TILE_SIZE);
-    const key = `${r},${c}`;
+    let visC = Math.floor(x / TILE_SIZE);
+    let visR = Math.floor(y / TILE_SIZE);
 
-    if (selectedCoin) {
-        const startR = selectedCoin.r; const startC = selectedCoin.c;
-        if (startR === r && startC === c) {
-            selectedCoin = null; validMoves = []; return;
-        }
-        const isMoveValid = validMoves.some(m => m.r === r && m.c === c);
-        if (isMoveValid) {
-            // ... move execution ...
-            // ONLINE: Send Move
-            if (gameMode === "ONLINE") {
-                network.send({
-                    type: 'MOVE',
-                    move: { start: { r: startR, c: startC }, end: { r, c } }
-                });
-                isOnlineTurn = false;
+    if (visR >= 0 && visR < BOARD_ROWS && visC >= 0 && visC < BOARD_COLS) {
+        // Convert to Logical
+        const rotate = shouldRotateBoard();
+        let r = rotate ? BOARD_ROWS - 1 - visR : visR;
+        let c = rotate ? BOARD_COLS - 1 - visC : visC;
+        const key = `${r},${c}`;
+
+        if (selectedCoin) {
+            const startR = selectedCoin.r; const startC = selectedCoin.c;
+            if (startR === r && startC === c) {
+                selectedCoin = null; validMoves = []; return;
             }
-
-            board[`${r},${c}`] = board[`${startR},${startC}`];
-            delete board[`${startR},${startC}`];
-            selectedCoin = null; validMoves = [];
-            const equations = checkForEquations(r, c, currentPlayer);
-            if (equations.length > 0) {
-                animationQueue.push(...equations);
-            } else {
-                currentPlayer = currentPlayer === 1 ? 2 : 1;
-
-                // SYNC ONLINE TURN
+            const isMoveValid = validMoves.some(m => m.r === r && m.c === c);
+            if (isMoveValid) {
+                // ... move execution ...
+                // ONLINE: Send Move
                 if (gameMode === "ONLINE") {
-                    isOnlineTurn = (currentPlayer === myPlayerColor);
+                    network.send({
+                        type: 'MOVE',
+                        move: { start: { r: startR, c: startC }, end: { r, c } }
+                    });
+                    isOnlineTurn = false;
                 }
 
-                resetStatusText();
+                board[`${r},${c}`] = board[`${startR},${startC}`];
+                delete board[`${startR},${startC}`];
+                selectedCoin = null; validMoves = [];
+                const equations = checkForEquations(r, c, currentPlayer);
+                if (equations.length > 0) {
+                    animationQueue.push(...equations);
+                } else {
+                    currentPlayer = currentPlayer === 1 ? 2 : 1;
+
+                    // SYNC ONLINE TURN
+                    if (gameMode === "ONLINE") {
+                        isOnlineTurn = (currentPlayer === myPlayerColor);
+                    }
+
+                    resetStatusText();
+                }
+            } else {
+                // Try selecting the new coin
+                if (board[key] && board[key].p === currentPlayer) {
+                    // Check if it's my coin (Online)
+                    if (gameMode === "ONLINE" && board[key].p !== myPlayerColor) return;
+
+                    selectedCoin = { r, c };
+                    validMoves = getValidMoves(r, c, currentPlayer);
+                    console.log(`Selected ${r},${c}. Player: ${currentPlayer}. Valid Moves:`, validMoves);
+                } else {
+                    selectedCoin = null; validMoves = [];
+                }
             }
         } else {
-            // Try selecting the new coin
             if (board[key] && board[key].p === currentPlayer) {
+                // Check if it's my coin (Online)
+                if (gameMode === "ONLINE" && board[key].p !== myPlayerColor) return;
+
                 selectedCoin = { r, c };
                 validMoves = getValidMoves(r, c, currentPlayer);
-                console.log(`Selected ${r},${c}. Player: ${currentPlayer}. Valid Moves:`, validMoves);
-            } else {
-                selectedCoin = null; validMoves = [];
+                console.log(`Initial Select ${r},${c}. Player: ${currentPlayer}. Valid Moves:`, validMoves);
+                console.log(`Debug: Mode=${gameMode}, OnlineTurn=${isOnlineTurn}, MyColor=${myPlayerColor}`);
             }
-        }
-    } else {
-        if (board[key] && board[key].p === currentPlayer) {
-            selectedCoin = { r, c };
-            validMoves = getValidMoves(r, c, currentPlayer);
-            console.log(`Initial Select ${r},${c}. Player: ${currentPlayer}. Valid Moves:`, validMoves);
-            console.log(`Debug: Mode=${gameMode}, OnlineTurn=${isOnlineTurn}, MyColor=${myPlayerColor}`);
         }
     }
 });
