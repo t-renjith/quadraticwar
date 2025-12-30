@@ -1,0 +1,115 @@
+Quadratic War - Game Design & Rules
+
+Overview
+--------
+Quadratic War is a two-player abstract strategy game that combines algebraic expressions and positional movement on a grid. Players control pieces whose labels are algebraic terms (quadratic, linear, or constant). By arranging adjacent pieces into contiguous lines, players attempt to form polynomial expressions of the form ax^2 + bx + c = 0. If the resulting polynomial has real solutions (discriminant Δ = b^2 - 4ac ≥ 0), the opponent's pieces in that contiguous line are removed; otherwise the active player's pieces in that line are removed.
+
+Board & Setup
+-------------
+- Board: 9 rows × 8 columns (constants: BOARD_ROWS = 9, BOARD_COLS = 8, tile size 70 px).
+- Initial placement: Three top rows filled by Player 1 (Red), three bottom rows filled by Player 2 (Blue). The central rows are empty.
+- Term mapping: Pieces display algebraic terms determined by column and piece row tier. COIN_TERMS maps three tiers:
+  - Quadratic terms (x^2): values across columns (e.g. -4x^2 .. 4x^2)
+  - Linear terms (x): values across columns (e.g. -4x .. 4x)
+  - Constant terms: values across columns (e.g. -4 .. 4)
+  - Term selection is mirrored so opposing players have complementary columns.
+
+Piece Types & Movement
+-----------------------
+- Quadratic (ax^2): can move up to 3 steps in any direction (cardinal or diagonal), and may move along cardinal or diagonal lines. They may move multiple squares provided the path is unobstructed.
+- Linear (bx): can move up to 2 steps, but only strictly horizontal or vertical (no diagonal moves). movement cannot change both row and column simultaneously.
+- Constant (c): can move 1 step forward only (forward means toward the opponent; Player 1 moves downward, Player 2 moves upward).
+- Movement cannot land on an occupied square and cannot pass through occupied squares; paths must be clear.
+
+Valid Moves
+-----------
+- The game validates moves based on the term type, direction, range, and occupancy.
+- For constants, horizontal movement is disallowed; for linears, diagonal movement is disallowed; for quadratics, moves must be cardinal or perfectly diagonal (equal row/col delta).
+- The code checks each intermediate cell along the path to ensure no pieces block movement.
+
+Equation Detection & Resolution
+--------------------------------
+- After a piece moves, the game checks for contiguous chains of pieces that include the moved piece along four principal axes: horizontal, vertical, and the two diagonals.
+- A contiguous chain is any sequence of adjacent occupied tiles in a straight line with no gaps. Chains must include pieces controlled by at least two different players to be considered.
+- Terms from each piece in the chain are parsed to coefficients a (x^2), b (x), and c (constant). The combined polynomial is formed by summing like-degree coefficients from all pieces in the chain.
+- The discriminant D = b^2 - 4ac is computed. If D ≥ 0 (real solutions exist) the chain is considered a "success" and the opponent's pieces in that chain are removed. If D < 0 (complex roots), the active player's pieces in that chain are removed.
+- The detection routine returns the chain coordinates, which pieces to remove, and whether it was a success (isSuccess).
+
+Win & Draw Conditions
+---------------------
+- Immediate win: If a player has zero pieces left, the opponent wins (WIN_RED or WIN_BLUE).
+- Draw conditions:
+  - No quadratic terms remain anywhere on the board (no possible ax^2 term), making it impossible to form a quadratic polynomial.
+  - If no linear terms exist and the remaining quadratics and constants across the board are all the same sign in a way that guarantees no real solutions (simple heuristic implemented): e.g., all quadratic coefficients positive and all constants positive (ax^2 + c = 0 has no real roots) — the code flags this as a DRAW.
+- Otherwise, the game state remains PLAYING.
+
+AI Behavior (Vs Computer)
+-------------------------
+- The AI controls Player 1 (Red) when playing vs computer.
+- AI enumerates all valid moves for its pieces, simulates each move, and scores them:
+  - If the simulated move produces successful equations, it gains a high positive score (e.g., +100 plus bonus per removed piece).
+  - If the simulated move produces unsuccessful equations (i.e., would remove the AI's own pieces), it receives a large negative penalty (e.g., -1000).
+  - For moves that produce no equations, a heuristic prefers advancing forward, central columns, and adds a small random tie-breaker.
+- The AI selects a best-scoring move (ties broken randomly) and applies it.
+
+Online Multiplayer
+------------------
+- The project uses PeerJS for peer-to-peer connections.
+- Role assignment:
+  - Host is Blue (Player 2) and starts the game.
+  - Joiner becomes Red (Player 1).
+- The host attempts to create a short ID prefixed with "QW-" and shares the four-character code with the joiner.
+- On connect, the host sends a START message; the joiner sets roles accordingly and the online session begins.
+- Moves are serialized and sent as objects containing start/end coordinates; the receiving peer applies the move locally and triggers the same equation detection logic (the code trusts incoming moves and does not re-validate in depth).
+
+Controls & UI
+-------------
+- Primary input is mouse-based (click to select a piece, click a target square to move).
+- The canvas element (gameCanvas) is the primary rendering target. UI buttons allow selecting modes (Local 2-player, vs Computer, Online PvP) and accessing instructions.
+- A hidden text input exists to capture typed join codes when joining online games.
+
+File Structure & Responsibilities
+--------------------------------
+- index.html — Hosts the canvas and loads required scripts (PeerJS, constants.js, logic.js, network.js, main.js). This is the single entry point to run the game in a browser.
+- constants.js — Configuration and utility helpers:
+  - Board dimensions (BOARD_ROWS, BOARD_COLS, TILE_SIZE)
+  - Color palette
+  - COIN_TERMS mapping (term strings used for piece labels)
+  - parseTerm() helper to convert a term string into {coeff, degree}
+  - toLatexStyle() for display formatting
+- logic.js — Core game logic and mechanics:
+  - getTermAtPos(), isValidMove(), getValidMoves()
+  - getContiguousChain(), checkForEquations() (equation detection and resolution)
+  - checkGameEnd() (win/draw detection)
+  - makeBestMove() (AI move selection)
+- network.js — NetworkManager class using PeerJS to host or join sessions, handle connections, data send/receive, and callbacks.
+- main.js — Game state, rendering, input handling, menus, game flow, initialization, online orchestration, and animation queue management. This glues together constants and logic to run the game.
+- style.css — Visual styling for the app and canvas container.
+
+Data Formats & Important Constants
+---------------------------------
+- Board squares and pieces are stored in an object keyed by "row,col" strings (e.g., "2,5") with value { p: <playerNumber>, term: <string> }.
+- Players: 1 = Red (often AI or joiner depending on mode), 2 = Blue (starts the game by default).
+- Animation and equation objects include metadata such as coords (chain coordinates), remove (which coords to remove), isSuccess (boolean), polyStr (string), phase and timing fields.
+
+How to Run
+----------
+- Open `index.html` in a modern browser (Chrome/Edge/Firefox). For online play, PeerJS requires network access and may require the browser to allow the PeerJS connection.
+- Modes available via menu: "2 Players (Local)", "Vs Computer", "Online PvP".
+
+Developer Notes & Potential Improvements
+---------------------------------------
+- Move validation is robust but online mode currently trusts remote moves; a server-side or mutual validation could prevent cheating.
+- The draw detection heuristic is conservative; a more rigorous algebraic check could refine draw detection for edge cases.
+- The AI is heuristic-based; adding deeper search or Monte Carlo simulations could improve play strength.
+- UI could show explicit polynomial formed (latex rendering available) and indicate discriminant values for clarity.
+
+Authors & Credits
+-----------------
+- Source files: index.html, constants.js, logic.js, network.js, main.js, style.css
+
+If you'd like, I can also:
+- Convert this write-up into a README.md with markup and file links.
+- Add inline comments in source files to reference the above rules.
+- Generate a short-play tutorial image sequence or an annotated example move.
+
